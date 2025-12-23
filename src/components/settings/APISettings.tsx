@@ -1,0 +1,227 @@
+import { useState, useEffect } from "react";
+import { Key, Eye, EyeOff, Save, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import CryptoJS from "crypto-js";
+
+interface APISettingsProps {
+  userId: string;
+}
+
+const ENCRYPTION_KEY = "ads-intel-hub-2024";
+
+const API_KEYS = [
+  { key: "META_APP_ID", label: "Meta App ID", placeholder: "Seu Meta App ID" },
+  { key: "META_APP_SECRET", label: "Meta App Secret", placeholder: "Seu Meta App Secret" },
+  { key: "META_ACCESS_TOKEN", label: "Meta Access Token", placeholder: "Seu Meta Access Token" },
+  { key: "META_PIXEL_ID", label: "Meta Pixel ID", placeholder: "Seu Meta Pixel ID" },
+];
+
+const APISettings = ({ userId }: APISettingsProps) => {
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const encrypt = (text: string) => {
+    return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString();
+  };
+
+  const decrypt = (ciphertext: string) => {
+    try {
+      const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+      return bytes.toString(CryptoJS.enc.Utf8);
+    } catch {
+      return "";
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+  }, [userId]);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("api_settings")
+        .select("*")
+        .eq("user_id", userId);
+
+      if (error) throw error;
+
+      const decryptedSettings: Record<string, string> = {};
+      data?.forEach((item) => {
+        decryptedSettings[item.setting_key] = decrypt(item.encrypted_value);
+      });
+      setSettings(decryptedSettings);
+    } catch (error: any) {
+      console.error("Error loading settings:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSetting = async (key: string) => {
+    const value = settings[key];
+    if (!value?.trim()) {
+      toast({
+        title: "Erro",
+        description: "O valor não pode estar vazio",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(key);
+    try {
+      const encrypted = encrypt(value);
+      const { error } = await supabase
+        .from("api_settings")
+        .upsert(
+          {
+            user_id: userId,
+            setting_key: key,
+            encrypted_value: encrypted,
+          },
+          { onConflict: "user_id,setting_key" }
+        );
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: `${key} salvo com segurança`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const deleteSetting = async (key: string) => {
+    setSaving(key);
+    try {
+      const { error } = await supabase
+        .from("api_settings")
+        .delete()
+        .eq("user_id", userId)
+        .eq("setting_key", key);
+
+      if (error) throw error;
+
+      setSettings((prev) => {
+        const newSettings = { ...prev };
+        delete newSettings[key];
+        return newSettings;
+      });
+
+      toast({
+        title: "Removido",
+        description: `${key} foi removido`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const isConfigured = (key: string) => Boolean(settings[key]?.trim());
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Key className="w-5 h-5 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold">API Vault</h2>
+          <p className="text-sm text-muted-foreground">Gerencie suas chaves de API de forma segura</p>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 space-y-6">
+        {API_KEYS.map((apiKey) => (
+          <div key={apiKey.key} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm text-muted-foreground flex items-center gap-2">
+                {apiKey.label}
+                {isConfigured(apiKey.key) ? (
+                  <CheckCircle2 className="w-4 h-4 text-neon-green" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-neon-orange" />
+                )}
+              </Label>
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={visibility[apiKey.key] ? "text" : "password"}
+                  value={settings[apiKey.key] || ""}
+                  onChange={(e) => setSettings({ ...settings, [apiKey.key]: e.target.value })}
+                  placeholder={apiKey.placeholder}
+                  className="input-dark pr-10 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setVisibility({ ...visibility, [apiKey.key]: !visibility[apiKey.key] })}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {visibility[apiKey.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => saveSetting(apiKey.key)}
+                disabled={saving === apiKey.key}
+                className="bg-primary/10 hover:bg-primary/20 text-primary"
+              >
+                <Save className="w-4 h-4" />
+              </Button>
+              {isConfigured(apiKey.key) && (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={() => deleteSetting(apiKey.key)}
+                  disabled={saving === apiKey.key}
+                  className="bg-destructive/10 hover:bg-destructive/20 text-destructive"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="glass-card p-4 border-neon-orange/30">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-neon-orange flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-neon-orange">Segurança</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Suas chaves são criptografadas antes de serem salvas. Nunca compartilhe suas credenciais.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default APISettings;
