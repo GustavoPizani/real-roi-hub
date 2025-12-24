@@ -18,6 +18,7 @@ const API_KEYS = [
   { key: "META_APP_SECRET", label: "Meta App Secret", placeholder: "Seu Meta App Secret" },
   { key: "META_ACCESS_TOKEN", label: "Meta Access Token", placeholder: "Seu Meta Access Token" },
   { key: "META_PIXEL_ID", label: "Meta Pixel ID", placeholder: "Seu Meta Pixel ID" },
+  { key: "GEMINI_API_KEY", label: "Gemini API Key", placeholder: "Cole sua chave do Gemini aqui..." },
 ];
 
 const APISettings = ({ userId }: APISettingsProps) => {

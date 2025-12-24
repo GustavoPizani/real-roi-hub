@@ -16,6 +16,12 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
   const [uploadStats, setUploadStats] = useState<{ inserted: number; updated: number } | null>(null);
   const { toast } = useToast();
 
+  const parseBrazilianDate = (dateStr: string) => {
+    if (!dateStr) return null;
+    const [day, month, year] = dateStr.split('/');
+    return new Date(`${year}-${month}-${day}`).toISOString();
+  };
+
   const handleDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -65,8 +71,8 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
               situacao_atendimento: row["Situação Atendimento"] || row["situacao_atendimento"] || null,
               canal: row["Canal"] || row["canal"] || null,
               corretor: row["Corretor"] || row["corretor"] || null,
-              cadastro: row["Cadastro"] || row["cadastro"] ? new Date(row["Cadastro"] || row["cadastro"]).toISOString() : null,
-              atualizacao: row["Atualização"] || row["atualizacao"] ? new Date(row["Atualização"] || row["atualizacao"]).toISOString() : null,
+              cadastro: parseBrazilianDate(row["Cadastro"] || row["cadastro"]),
+              atualizacao: parseBrazilianDate(row["Atualização"] || row["atualizacao"]),
             };
 
             // Check if lead exists by email or fac_id
