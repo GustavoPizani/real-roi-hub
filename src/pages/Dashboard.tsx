@@ -47,7 +47,7 @@ const Dashboard = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const { temporalData, devicesData, periodData, adsData, kpis, isUsingMockData, isLoading } = useDashboardData(
+  const { temporalData, devicesData, periodData, adsData, kpis, isUsingMockData, isLoading, error } = useDashboardData(
     user?.id || ""
   );
 
@@ -111,22 +111,23 @@ const Dashboard = () => {
         <div className="p-6">
           {currentPage === "dashboard" && (
             <>
-              {/* Mock Data Warning */}
+              {/* Empty State or Mock Data Warning */}
               {isUsingMockData && (
-                <div className="glass-card p-4 mb-6 border-neon-orange/30 animate-fade-in">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-neon-orange flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-neon-orange">Modo demonstração</p>
-                      <p className="text-sm text-muted-foreground">
-                        Configure suas APIs Meta nas configurações para ver dados reais.
+                <div className="glass-card p-6 mb-6 border-neon-orange/30 animate-fade-in">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-neon-orange/10 flex items-center justify-center">
+                      <AlertCircle className="w-6 h-6 text-neon-orange" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-base font-semibold text-neon-orange">APIs não configuradas</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {error || "Configure suas APIs Meta nas configurações para ver dados reais de suas campanhas."}
                       </p>
                     </div>
                     <Button
                       variant="secondary"
-                      size="sm"
                       onClick={() => setCurrentPage("settings")}
-                      className="ml-auto bg-neon-orange/10 hover:bg-neon-orange/20 text-neon-orange"
+                      className="bg-neon-orange/10 hover:bg-neon-orange/20 text-neon-orange"
                     >
                       Configurar APIs
                     </Button>
@@ -134,59 +135,72 @@ const Dashboard = () => {
                 </div>
               )}
 
-              {/* KPIs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <KPICard
-                  title="Investido"
-                  value={`R$ ${kpis.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-                  subtitle="Últimos 30 dias"
-                  icon={DollarSign}
-                  variant="primary"
-                  delay={0}
-                />
-                <KPICard
-                  title="Resultado"
-                  value={kpis.resultado.toString()}
-                  subtitle="Mensagens recebidas"
-                  icon={MessageCircle}
-                  variant="success"
-                  trend={{ value: 12, isPositive: true }}
-                  delay={100}
-                />
-                <KPICard
-                  title="Custo por Resultado"
-                  value={`R$ ${kpis.custoPorResultado.toFixed(2)}`}
-                  subtitle="CPR médio"
-                  icon={TrendingUp}
-                  variant="warning"
-                  delay={200}
-                />
-                <KPICard
-                  title="ROI Real"
-                  value={`${kpis.roiReal.toFixed(1)}%`}
-                  subtitle="Retorno sobre investimento"
-                  icon={Percent}
-                  variant="default"
-                  trend={{ value: 8.5, isPositive: true }}
-                  delay={300}
-                />
-              </div>
-
-              {/* Charts Row 1 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                <div className="lg:col-span-2">
-                  <TemporalChart data={temporalData} title="Visão Temporal" />
+              {/* Loading State */}
+              {isLoading && (
+                <div className="flex items-center justify-center py-20">
+                  <div className="text-center">
+                    <div className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-sm text-muted-foreground">Carregando dados...</p>
+                  </div>
                 </div>
-                <DevicesChart data={devicesData} title="Devices" />
-              </div>
+              )}
 
-              {/* Charts Row 2 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                <PeriodChart data={periodData} title="Período do Dia" />
-                <div className="lg:col-span-2">
-                  <AdsTable ads={adsData} title="Ranking de Anúncios" />
-                </div>
-              </div>
+              {/* Dashboard Content */}
+              {!isLoading && !isUsingMockData && (
+                <>
+                  {/* KPIs */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <KPICard
+                      title="Investido"
+                      value={`R$ ${kpis.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                      subtitle="Últimos 30 dias"
+                      icon={DollarSign}
+                      variant="primary"
+                      delay={0}
+                    />
+                    <KPICard
+                      title="Resultado"
+                      value={kpis.resultado.toString()}
+                      subtitle="Mensagens recebidas"
+                      icon={MessageCircle}
+                      variant="success"
+                      delay={100}
+                    />
+                    <KPICard
+                      title="Custo por Resultado"
+                      value={`R$ ${kpis.custoPorResultado.toFixed(2)}`}
+                      subtitle="CPR médio"
+                      icon={TrendingUp}
+                      variant="warning"
+                      delay={200}
+                    />
+                    <KPICard
+                      title="ROI Real"
+                      value={`${kpis.roiReal.toFixed(1)}%`}
+                      subtitle="Retorno sobre investimento"
+                      icon={Percent}
+                      variant="default"
+                      delay={300}
+                    />
+                  </div>
+
+                  {/* Charts Row 1 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                    <div className="lg:col-span-2">
+                      <TemporalChart data={temporalData} title="Visão Temporal" />
+                    </div>
+                    <DevicesChart data={devicesData} title="Devices" />
+                  </div>
+
+                  {/* Charts Row 2 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                    <PeriodChart data={periodData} title="Período do Dia" />
+                    <div className="lg:col-span-2">
+                      <AdsTable ads={adsData} title="Ranking de Anúncios" />
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
