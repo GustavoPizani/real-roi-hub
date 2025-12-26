@@ -75,22 +75,28 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
               atualizacao: parseBrazilianDate(row["Atualização"] || row["atualizacao"]),
             };
 
-            // Check if lead exists by email or fac_id
-            const { data: existingLead } = await supabase
-              .from("crm_leads")
-              .select("id")
-              .eq("user_id", userId)
-              .or(`email.eq.${lead.email},fac_id.eq.${lead.fac_id}`)
-              .maybeSingle();
+            // Build a query to find existing lead by email or phone
+            const orConditions = [];
+            if (lead.email) orConditions.push(`email.eq.${lead.email}`);
+            if (lead.telefone) orConditions.push(`telefone.eq.${lead.telefone}`);
+
+            let existingLead = null;
+            if (orConditions.length > 0) {
+              const { data } = await supabase
+                .from("crm_leads")
+                .select("id")
+                .eq("user_id", userId)
+                .or(orConditions.join(','))
+                .maybeSingle();
+              existingLead = data;
+            }
 
             if (existingLead) {
-              // Update existing lead
+              // If lead exists, update it with all new data from CSV, except identifiers
+              const { id, user_id, email, telefone, ...updateData } = lead;
               await supabase
                 .from("crm_leads")
-                .update({
-                  situacao_atendimento: lead.situacao_atendimento,
-                  atualizacao: lead.atualizacao,
-                })
+                .update(updateData)
                 .eq("id", existingLead.id);
               updated++;
             } else {

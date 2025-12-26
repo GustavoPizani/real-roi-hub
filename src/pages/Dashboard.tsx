@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { DollarSign, MessageCircle, TrendingUp, Percent, AlertCircle, FileDown } from "lucide-react";
+import { DollarSign, FileText, TrendingUp, Percent, AlertCircle, FileDown } from "lucide-react";
 import Sidebar from "@/components/dashboard/Sidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import TemporalChart from "@/components/dashboard/TemporalChart";
@@ -77,12 +77,12 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar onNavigate={handleNavigate} currentPage={currentPage} />
 
-      <main className="flex-1 overflow-auto">
-        {/* Header */}
-        <header className="h-16 border-b border-border flex items-center justify-between px-6">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Header Fixo */}
+        <header className="h-16 flex-shrink-0 border-b border-border flex items-center justify-between px-6">
           <div>
             <h1 className="text-xl font-semibold capitalize">
               {currentPage === "dashboard" ? "Dashboard" : currentPage === "crm" ? "CRM" : "Configurações"}
@@ -107,8 +107,8 @@ const Dashboard = () => {
           </div>
         </header>
 
-        {/* Content */}
-        <div className="p-6">
+        {/* Área de Conteúdo com Scroll */}
+        <main className="flex-1 overflow-y-auto p-6">
           {currentPage === "dashboard" && (
             <>
               {/* Empty State or Mock Data Warning */}
@@ -161,8 +161,8 @@ const Dashboard = () => {
                     <KPICard
                       title="Resultado"
                       value={kpis.resultado.toString()}
-                      subtitle="Mensagens recebidas"
-                      icon={MessageCircle}
+                      subtitle="Leads gerados"
+                      icon={FileText}
                       variant="success"
                       delay={100}
                     />
@@ -212,8 +212,8 @@ const Dashboard = () => {
               <LeadsTable userId={user.id} refreshTrigger={crmRefresh} />
             </div>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
 
       {/* AI Chat Panel */}
       {showChat && (

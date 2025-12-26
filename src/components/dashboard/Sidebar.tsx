@@ -35,7 +35,7 @@ const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
   ];
 
   return (
-    <div className="w-64 h-screen bg-surface-1 border-r border-border flex flex-col sidebar-glow">
+    <aside className="w-64 flex-shrink-0 bg-surface-1 border-r border-border flex flex-col sidebar-glow">
       {/* Logo */}
       <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3">
@@ -93,7 +93,7 @@ const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
           Sair
         </Button>
       </div>
-    </div>
+    </aside>
   );
 };
 

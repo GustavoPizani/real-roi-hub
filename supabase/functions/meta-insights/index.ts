@@ -1,14 +1,11 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
@@ -17,7 +14,7 @@ serve(async (req) => {
     if (!accessToken || !adAccountId) {
       return new Response(
         JSON.stringify({ error: "Missing access token or ad account ID" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -39,7 +36,7 @@ serve(async (req) => {
       console.error("Meta API error:", insightsData.error);
       return new Response(
         JSON.stringify({ error: insightsData.error.message }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -99,12 +96,8 @@ serve(async (req) => {
     
     // Find messaging/lead actions
     const actions = accountInsight.actions || [];
-    const messageAction = actions.find((a: any) => 
-      a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-      a.action_type === "onsite_conversion.messaging_first_reply" ||
-      a.action_type === "lead"
-    );
-    const conversions = parseInt(messageAction?.value || "0");
+    const leadAction = actions.find((a: any) => a.action_type === "lead");
+    const conversions = parseInt(leadAction?.value || "0");
     
     const costPerResult = conversions > 0 ? spend / conversions : 0;
 
@@ -135,10 +128,7 @@ serve(async (req) => {
     // Process daily data for temporal chart
     const temporalData = (dailyData.data || []).map((item: any) => {
       const date = new Date(item.date_start);
-      const leads = (item.actions || []).find((a: any) => 
-        a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-        a.action_type === "lead"
-      )?.value || 0;
+      const leads = (item.actions || []).find((a: any) => a.action_type === "lead")?.value || 0;
       
       return {
         date: `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}`,
@@ -151,10 +141,7 @@ serve(async (req) => {
     const adsProcessed = (adsData.data || []).map((ad: any) => {
       const insight = ad.insights?.data?.[0] || {};
       const adActions = insight.actions || [];
-      const adConversions = adActions.find((a: any) => 
-        a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-        a.action_type === "lead"
-      )?.value || 0;
+      const adConversions = adActions.find((a: any) => a.action_type === "lead")?.value || 0;
       
       return {
         id: ad.id,
@@ -184,14 +171,14 @@ serve(async (req) => {
         periodData,
         adsData: adsProcessed,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error: unknown) {
     console.error("Meta insights error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
