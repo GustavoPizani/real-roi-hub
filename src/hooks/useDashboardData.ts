@@ -1,102 +1,214 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import CryptoJS from "crypto-js";
 
-// Mock data for demonstration
-const MOCK_TEMPORAL_DATA = [
-  { date: "01/12", investimento: 1500, leads: 45 },
-  { date: "08/12", investimento: 2200, leads: 62 },
-  { date: "15/12", investimento: 1800, leads: 51 },
-  { date: "22/12", investimento: 3100, leads: 89 },
-];
+const ENCRYPTION_KEY = "ads-intel-hub-2024";
 
-const MOCK_DEVICES_DATA = [
-  { name: "Mobile", value: 65 },
-  { name: "Desktop", value: 28 },
-  { name: "Tablet", value: 7 },
-];
+interface TemporalDataPoint {
+  date: string;
+  investimento: number;
+  leads: number;
+}
 
-const MOCK_PERIOD_DATA = [
-  { period: "Manhã", value: 35 },
-  { period: "Tarde", value: 52 },
-  { period: "Noite", value: 28 },
-  { period: "Madrugada", value: 12 },
-];
+interface DeviceDataPoint {
+  name: string;
+  value: number;
+}
 
-const MOCK_ADS = [
-  { id: "1", name: "Lançamento Edifício Aurora", impressions: 45230, clicks: 1289, spend: 850.00, conversions: 23, costPerResult: 36.96 },
-  { id: "2", name: "Promoção Black Week", impressions: 38540, clicks: 987, spend: 720.50, conversions: 18, costPerResult: 40.03 },
-  { id: "3", name: "Apartamentos 2Q Centro", impressions: 29870, clicks: 756, spend: 580.00, conversions: 15, costPerResult: 38.67 },
-  { id: "4", name: "Casas em Condomínio", impressions: 22340, clicks: 543, spend: 420.00, conversions: 11, costPerResult: 38.18 },
-];
+interface PeriodDataPoint {
+  period: string;
+  value: number;
+}
 
-const MOCK_KPIS = {
-  investido: 8570.50,
-  resultado: 247,
-  custoPorResultado: 34.70,
-  roiReal: 185.3,
-};
+interface AdData {
+  id: string;
+  name: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  costPerResult: number;
+  thumbnail_url?: string;
+}
+
+interface KPIs {
+  investido: number;
+  resultado: number;
+  custoPorResultado: number;
+  roiReal: number;
+}
 
 interface DashboardData {
-  temporalData: typeof MOCK_TEMPORAL_DATA;
-  devicesData: typeof MOCK_DEVICES_DATA;
-  periodData: typeof MOCK_PERIOD_DATA;
-  adsData: typeof MOCK_ADS;
-  kpis: typeof MOCK_KPIS;
+  temporalData: TemporalDataPoint[];
+  devicesData: DeviceDataPoint[];
+  periodData: PeriodDataPoint[];
+  adsData: AdData[];
+  kpis: KPIs;
   isUsingMockData: boolean;
   isLoading: boolean;
+  error: string | null;
 }
+
+const decrypt = (ciphertext: string): string => {
+  try {
+    const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return "";
+  }
+};
 
 export const useDashboardData = (userId: string) => {
   const [data, setData] = useState<DashboardData>({
-    temporalData: MOCK_TEMPORAL_DATA,
-    devicesData: MOCK_DEVICES_DATA,
-    periodData: MOCK_PERIOD_DATA,
-    adsData: MOCK_ADS,
-    kpis: MOCK_KPIS,
+    temporalData: [],
+    devicesData: [],
+    periodData: [],
+    adsData: [],
+    kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
     isUsingMockData: true,
     isLoading: true,
+    error: null,
   });
 
-  useEffect(() => {
-    checkAPIConfiguration();
+  const fetchAPISettings = useCallback(async () => {
+    if (!userId) return null;
+
+    const { data: settings, error } = await supabase
+      .from("api_settings")
+      .select("setting_key, encrypted_value")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching API settings:", error);
+      return null;
+    }
+
+    const decrypted: Record<string, string> = {};
+    settings?.forEach((item) => {
+      decrypted[item.setting_key] = decrypt(item.encrypted_value);
+    });
+
+    return decrypted;
   }, [userId]);
 
-  const checkAPIConfiguration = async () => {
+  const fetchCRMData = useCallback(async () => {
+    if (!userId) return { totalSales: 0, totalRevenue: 0 };
+
+    const { data: leads, error } = await supabase
+      .from("crm_leads")
+      .select("situacao_atendimento")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching CRM data:", error);
+      return { totalSales: 0, totalRevenue: 0 };
+    }
+
+    // Count "Venda" status as sales
+    const sales = leads?.filter((lead) => 
+      lead.situacao_atendimento?.toLowerCase().includes("venda")
+    ).length || 0;
+
+    // Estimate average ticket (can be configured later)
+    const avgTicket = 350000; // R$ 350k average real estate sale
+    const revenue = sales * avgTicket;
+
+    return { totalSales: sales, totalRevenue: revenue };
+  }, [userId]);
+
+  const fetchMetaData = useCallback(async (accessToken: string, adAccountId: string) => {
     try {
-      const { data: settings, error } = await supabase
-        .from("api_settings")
-        .select("setting_key")
-        .eq("user_id", userId);
+      const response = await supabase.functions.invoke("meta-insights", {
+        body: { accessToken, adAccountId },
+      });
 
-      if (error) throw error;
+      if (response.error) {
+        console.error("Meta insights error:", response.error);
+        return null;
+      }
 
-      const configuredKeys = settings?.map((s) => s.setting_key) || [];
-      const requiredKeys = ["META_ACCESS_TOKEN", "META_APP_ID"];
-      const hasAllKeys = requiredKeys.every((key) => configuredKeys.includes(key));
+      return response.data;
+    } catch (error) {
+      console.error("Error calling meta-insights:", error);
+      return null;
+    }
+  }, []);
 
-      if (hasAllKeys) {
-        // Would fetch real data here from Meta API
-        // For now, we'll use mock data
-        setData((prev) => ({
-          ...prev,
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (!userId) {
+        setData((prev) => ({ ...prev, isLoading: false }));
+        return;
+      }
+
+      setData((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        // Fetch API settings
+        const settings = await fetchAPISettings();
+        
+        const accessToken = settings?.META_ACCESS_TOKEN;
+        const adAccountId = settings?.META_AD_ACCOUNT_ID;
+
+        if (!accessToken || !adAccountId) {
+          setData((prev) => ({
+            ...prev,
+            isUsingMockData: true,
+            isLoading: false,
+            error: "Configure suas APIs Meta nas configurações para ver dados reais.",
+          }));
+          return;
+        }
+
+        // Fetch real Meta data
+        const metaData = await fetchMetaData(accessToken, adAccountId);
+
+        if (!metaData) {
+          setData((prev) => ({
+            ...prev,
+            isUsingMockData: true,
+            isLoading: false,
+            error: "Erro ao buscar dados da Meta. Verifique suas credenciais.",
+          }));
+          return;
+        }
+
+        // Fetch CRM data for ROI calculation
+        const crmData = await fetchCRMData();
+
+        // Calculate ROI Real
+        const investment = metaData.kpis.investido;
+        const roiReal = investment > 0 
+          ? ((crmData.totalRevenue - investment) / investment) * 100 
+          : 0;
+
+        setData({
+          temporalData: metaData.temporalData || [],
+          devicesData: metaData.devicesData || [],
+          periodData: metaData.periodData || [],
+          adsData: metaData.adsData || [],
+          kpis: {
+            investido: metaData.kpis.investido,
+            resultado: metaData.kpis.resultado,
+            custoPorResultado: metaData.kpis.custoPorResultado,
+            roiReal: roiReal,
+          },
           isUsingMockData: false,
           isLoading: false,
-        }));
-      } else {
+          error: null,
+        });
+      } catch (error) {
+        console.error("Error loading dashboard data:", error);
         setData((prev) => ({
           ...prev,
-          isUsingMockData: true,
           isLoading: false,
+          error: "Erro ao carregar dados. Tente novamente.",
         }));
       }
-    } catch (error) {
-      console.error("Error checking API configuration:", error);
-      setData((prev) => ({
-        ...prev,
-        isLoading: false,
-      }));
-    }
-  };
+    };
+
+    loadDashboardData();
+  }, [userId, fetchAPISettings, fetchMetaData, fetchCRMData]);
 
   return data;
 };
