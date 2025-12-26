@@ -11,6 +11,7 @@ interface APISettingsProps {
   userId: string;
 }
 
+// Chave para criptografia local (AES)
 const ENCRYPTION_KEY = "ads-intel-hub-2024";
 
 const API_KEYS = [
@@ -18,7 +19,7 @@ const API_KEYS = [
   { key: "META_APP_SECRET", label: "Meta App Secret", placeholder: "Seu Meta App Secret" },
   { key: "META_ACCESS_TOKEN", label: "Meta Access Token", placeholder: "Seu Meta Access Token" },
   { key: "META_PIXEL_ID", label: "Meta Pixel ID", placeholder: "Seu Meta Pixel ID" },
-  { key: "GEMINI_API_KEY", label: "Gemini API Key", placeholder: "Cole sua chave do Gemini aqui..." },
+  { key: "GEMINI_API_KEY", label: "Gemini API Key", placeholder: "Sua chave do Google Gemini (IA)" },
 ];
 
 const APISettings = ({ userId }: APISettingsProps) => {
@@ -42,7 +43,9 @@ const APISettings = ({ userId }: APISettingsProps) => {
   };
 
   useEffect(() => {
-    loadSettings();
+    if (userId) {
+      loadSettings();
+    }
   }, [userId]);
 
   const loadSettings = async () => {
@@ -61,7 +64,7 @@ const APISettings = ({ userId }: APISettingsProps) => {
       });
       setSettings(decryptedSettings);
     } catch (error: any) {
-      console.error("Error loading settings:", error);
+      console.error("Erro ao carregar configurações:", error);
     } finally {
       setLoading(false);
     }
@@ -72,7 +75,7 @@ const APISettings = ({ userId }: APISettingsProps) => {
     if (!value?.trim()) {
       toast({
         title: "Erro",
-        description: "O valor não pode estar vazio",
+        description: "O campo não pode estar vazio",
         variant: "destructive",
       });
       return;
@@ -96,11 +99,11 @@ const APISettings = ({ userId }: APISettingsProps) => {
 
       toast({
         title: "Sucesso",
-        description: `${key} salvo com segurança`,
+        description: `Configuração ${key} salva com segurança.`,
       });
     } catch (error: any) {
       toast({
-        title: "Erro",
+        title: "Erro ao salvar",
         description: error.message,
         variant: "destructive",
       });
@@ -128,7 +131,7 @@ const APISettings = ({ userId }: APISettingsProps) => {
 
       toast({
         title: "Removido",
-        description: `${key} foi removido`,
+        description: `A chave ${key} foi removida do banco de dados.`,
       });
     } catch (error: any) {
       toast({
@@ -144,30 +147,34 @@ const APISettings = ({ userId }: APISettingsProps) => {
   const isConfigured = (key: string) => Boolean(settings[key]?.trim());
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          <Key className="w-5 h-5 text-primary" />
+        <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Key className="w-6 h-6 text-primary" />
         </div>
         <div>
-          <h2 className="text-xl font-semibold">API Vault</h2>
-          <p className="text-sm text-muted-foreground">Gerencie suas chaves de API de forma segura</p>
+          <h2 className="text-2xl font-bold tracking-tight">API Vault</h2>
+          <p className="text-sm text-muted-foreground">Criptografia de ponta a ponta para suas chaves</p>
         </div>
       </div>
 
-      <div className="glass-card p-6 space-y-6">
+      <div className="glass-card p-6 space-y-6 border-white/5">
         {API_KEYS.map((apiKey) => (
-          <div key={apiKey.key} className="space-y-2">
+          <div key={apiKey.key} className="space-y-3 group">
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground flex items-center gap-2">
+              <Label className="text-sm font-medium flex items-center gap-2 group-hover:text-primary transition-colors">
                 {apiKey.label}
                 {isConfigured(apiKey.key) ? (
-                  <CheckCircle2 className="w-4 h-4 text-neon-green" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-pulse" />
                 ) : (
-                  <AlertCircle className="w-4 h-4 text-neon-orange" />
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
                 )}
               </Label>
+              {isConfigured(apiKey.key) && (
+                <span className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Ativo</span>
+              )}
             </div>
+            
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -175,32 +182,34 @@ const APISettings = ({ userId }: APISettingsProps) => {
                   value={settings[apiKey.key] || ""}
                   onChange={(e) => setSettings({ ...settings, [apiKey.key]: e.target.value })}
                   placeholder={apiKey.placeholder}
-                  className="input-dark pr-10 font-mono text-sm"
+                  className="bg-slate-950/50 border-slate-800 focus:border-primary/50 pr-10 font-mono text-sm h-11"
                 />
                 <button
                   type="button"
                   onClick={() => setVisibility({ ...visibility, [apiKey.key]: !visibility[apiKey.key] })}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                 >
                   {visibility[apiKey.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              
               <Button
-                variant="secondary"
+                variant="outline"
                 size="icon"
                 onClick={() => saveSetting(apiKey.key)}
                 disabled={saving === apiKey.key}
-                className="bg-primary/10 hover:bg-primary/20 text-primary"
+                className="h-11 w-11 border-slate-800 hover:bg-primary/10 hover:text-primary transition-all"
               >
                 <Save className="w-4 h-4" />
               </Button>
+
               {isConfigured(apiKey.key) && (
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="icon"
                   onClick={() => deleteSetting(apiKey.key)}
                   disabled={saving === apiKey.key}
-                  className="bg-destructive/10 hover:bg-destructive/20 text-destructive"
+                  className="h-11 w-11 border-slate-800 hover:bg-destructive/10 hover:text-destructive transition-all"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
@@ -210,13 +219,14 @@ const APISettings = ({ userId }: APISettingsProps) => {
         ))}
       </div>
 
-      <div className="glass-card p-4 border-neon-orange/30">
+      <div className="rounded-lg p-4 bg-amber-500/5 border border-amber-500/20">
         <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-neon-orange flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-neon-orange">Segurança</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Suas chaves são criptografadas antes de serem salvas. Nunca compartilhe suas credenciais.
+            <p className="text-sm font-semibold text-amber-500">Aviso de Segurança</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              As chaves são armazenadas com criptografia AES-256 no Supabase. 
+              Ao salvar o <strong>Meta Access Token</strong>, o sistema poderá baixar automaticamente métricas de anúncios e sincronizar conversões via API.
             </p>
           </div>
         </div>
