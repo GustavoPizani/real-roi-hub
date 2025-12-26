@@ -116,18 +116,93 @@ export const useDashboardData = (userId: string) => {
     return { totalSales: sales, totalRevenue: revenue };
   }, [userId]);
 
-  const fetchMetaData = useCallback(async (accessToken: string, adAccountId: string) => {
+  const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
     try {
-      const response = await supabase.functions.invoke("meta-insights", {
-        body: { accessToken, adAccountId },
-      });
+      // Fetch data from all accounts in parallel
+      const promises = adAccountIds.map((adAccountId) =>
+        supabase.functions.invoke("meta-insights", {
+          body: { accessToken, adAccountId: adAccountId.trim() },
+        })
+      );
 
-      if (response.error) {
-        console.error("Meta insights error:", response.error);
+      const results = await Promise.all(promises);
+      
+      // Aggregate data from all accounts
+      const aggregated = {
+        kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
+        temporalData: [] as TemporalDataPoint[],
+        devicesData: [] as DeviceDataPoint[],
+        periodData: [] as PeriodDataPoint[],
+        adsData: [] as AdData[],
+      };
+
+      const temporalMap = new Map<string, { investimento: number; leads: number }>();
+      const devicesMap = new Map<string, number>();
+      const periodMap = new Map<string, number>();
+
+      let successCount = 0;
+
+      for (const response of results) {
+        if (response.error || !response.data) {
+          console.error("Meta insights error:", response.error);
+          continue;
+        }
+
+        successCount++;
+        const data = response.data;
+
+        // Aggregate KPIs
+        aggregated.kpis.investido += data.kpis?.investido || 0;
+        aggregated.kpis.resultado += data.kpis?.resultado || 0;
+
+        // Aggregate temporal data
+        data.temporalData?.forEach((item: TemporalDataPoint) => {
+          const existing = temporalMap.get(item.date) || { investimento: 0, leads: 0 };
+          temporalMap.set(item.date, {
+            investimento: existing.investimento + item.investimento,
+            leads: existing.leads + item.leads,
+          });
+        });
+
+        // Aggregate devices data
+        data.devicesData?.forEach((item: DeviceDataPoint) => {
+          const existing = devicesMap.get(item.name) || 0;
+          devicesMap.set(item.name, existing + item.value);
+        });
+
+        // Aggregate period data
+        data.periodData?.forEach((item: PeriodDataPoint) => {
+          const existing = periodMap.get(item.period) || 0;
+          periodMap.set(item.period, existing + item.value);
+        });
+
+        // Combine all ads
+        if (data.adsData) {
+          aggregated.adsData.push(...data.adsData);
+        }
+      }
+
+      if (successCount === 0) {
         return null;
       }
 
-      return response.data;
+      // Calculate cost per result
+      aggregated.kpis.custoPorResultado = aggregated.kpis.resultado > 0
+        ? aggregated.kpis.investido / aggregated.kpis.resultado
+        : 0;
+
+      // Convert maps to arrays
+      aggregated.temporalData = Array.from(temporalMap.entries())
+        .map(([date, values]) => ({ date, ...values }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      aggregated.devicesData = Array.from(devicesMap.entries())
+        .map(([name, value]) => ({ name, value }));
+
+      aggregated.periodData = Array.from(periodMap.entries())
+        .map(([period, value]) => ({ period, value }));
+
+      return aggregated;
     } catch (error) {
       console.error("Error calling meta-insights:", error);
       return null;
@@ -148,9 +223,9 @@ export const useDashboardData = (userId: string) => {
         const settings = await fetchAPISettings();
         
         const accessToken = settings?.META_ACCESS_TOKEN;
-        const adAccountId = settings?.META_AD_ACCOUNT_ID;
+        const adAccountIds = settings?.META_AD_ACCOUNT_IDS?.split(",").filter(Boolean) || [];
 
-        if (!accessToken || !adAccountId) {
+        if (!accessToken || adAccountIds.length === 0) {
           setData((prev) => ({
             ...prev,
             isUsingMockData: true,
@@ -160,8 +235,8 @@ export const useDashboardData = (userId: string) => {
           return;
         }
 
-        // Fetch real Meta data
-        const metaData = await fetchMetaData(accessToken, adAccountId);
+        // Fetch real Meta data from all accounts
+        const metaData = await fetchMetaData(accessToken, adAccountIds);
 
         if (!metaData) {
           setData((prev) => ({
