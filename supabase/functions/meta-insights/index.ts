@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { accessToken, adAccountId, datePreset = "last_30d" } = await req.json();
+    const { accessToken, adAccountId, since, until } = await req.json();
 
     if (!accessToken || !adAccountId) {
       return new Response(
@@ -18,16 +18,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log("Fetching Meta insights for account:", adAccountId);
+    const time_range = since && until ? JSON.stringify({ since, until }) : undefined;
+    const date_preset = !time_range ? 'last_30d' : undefined;
+
+    console.log(`Fetching Meta insights for account: ${adAccountId} with range: ${time_range || date_preset}`);
 
     // Fetch account insights
     const insightsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/insights`;
     const insightsParams = new URLSearchParams({
       access_token: accessToken,
-      date_preset: datePreset,
       fields: "spend,impressions,clicks,actions,cost_per_action_type",
       level: "account",
     });
+
+    if (time_range) insightsParams.append('time_range', time_range);
+    if (date_preset) insightsParams.append('date_preset', date_preset);
 
     const insightsResponse = await fetch(`${insightsUrl}?${insightsParams}`);
     const insightsData = await insightsResponse.json();
@@ -44,10 +49,12 @@ Deno.serve(async (req) => {
     const adsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/ads`;
     const adsParams = new URLSearchParams({
       access_token: accessToken,
-      date_preset: datePreset,
       fields: "id,name,creative{thumbnail_url},insights{spend,impressions,clicks,actions,cost_per_action_type}",
       limit: "50",
     });
+
+    if (time_range) adsParams.append('time_range', time_range);
+    if (date_preset) adsParams.append('date_preset', date_preset);
 
     const adsResponse = await fetch(`${adsUrl}?${adsParams}`);
     const adsData = await adsResponse.json();
@@ -55,11 +62,13 @@ Deno.serve(async (req) => {
     // Fetch insights breakdown by device
     const deviceParams = new URLSearchParams({
       access_token: accessToken,
-      date_preset: datePreset,
       fields: "impressions",
       breakdowns: "device_platform",
       level: "account",
     });
+
+    if (time_range) deviceParams.append('time_range', time_range);
+    if (date_preset) deviceParams.append('date_preset', date_preset);
 
     const deviceResponse = await fetch(`${insightsUrl}?${deviceParams}`);
     const deviceData = await deviceResponse.json();
@@ -67,11 +76,13 @@ Deno.serve(async (req) => {
     // Fetch insights breakdown by hour
     const hourParams = new URLSearchParams({
       access_token: accessToken,
-      date_preset: datePreset,
       fields: "impressions",
       breakdowns: "hourly_stats_aggregated_by_audience_time_zone",
       level: "account",
     });
+
+    if (time_range) hourParams.append('time_range', time_range);
+    if (date_preset) hourParams.append('date_preset', date_preset);
 
     const hourResponse = await fetch(`${insightsUrl}?${hourParams}`);
     const hourData = await hourResponse.json();
@@ -79,11 +90,13 @@ Deno.serve(async (req) => {
     // Fetch daily insights for temporal chart
     const dailyParams = new URLSearchParams({
       access_token: accessToken,
-      date_preset: datePreset,
       fields: "spend,actions",
       time_increment: "1",
       level: "account",
     });
+
+    if (time_range) dailyParams.append('time_range', time_range);
+    if (date_preset) dailyParams.append('date_preset', date_preset);
 
     const dailyResponse = await fetch(`${insightsUrl}?${dailyParams}`);
     const dailyData = await dailyResponse.json();

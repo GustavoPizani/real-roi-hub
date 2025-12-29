@@ -75,34 +75,24 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
               atualizacao: parseBrazilianDate(row["Atualização"] || row["atualizacao"]),
             };
 
-            // Build a query to find existing lead by email or phone
-            const orConditions = [];
-            if (lead.email) orConditions.push(`email.eq.${lead.email}`);
-            if (lead.telefone) orConditions.push(`telefone.eq.${lead.telefone}`);
-
-            let existingLead = null;
-            if (orConditions.length > 0) {
-              const { data } = await supabase
-                .from("crm_leads")
-                .select("id")
-                .eq("user_id", userId)
-                .or(orConditions.join(','))
-                .maybeSingle();
-              existingLead = data;
+            // Pula linhas sem email, pois é necessário para a resolução de conflito do upsert
+            if (!lead.email) {
+              console.warn("Pulando linha por falta de email:", row);
+              continue;
             }
 
-            if (existingLead) {
-              // If lead exists, update it with all new data from CSV, except identifiers
-              const { id, user_id, email, telefone, ...updateData } = lead;
-              await supabase
-                .from("crm_leads")
-                .update(updateData)
-                .eq("id", existingLead.id);
-              updated++;
-            } else {
-              // Insert new lead
-              await supabase.from("crm_leads").insert(lead);
+            // Usa upsert com onConflict para inserir um novo lead ou atualizar um existente
+            const { status, error } = await supabase
+              .from("crm_leads")
+              .upsert(lead, { onConflict: "user_id,email" });
+
+            if (error) throw error;
+
+            // 201 Created significa que uma nova linha foi inserida
+            if (status === 201) {
               inserted++;
+            } else { // Qualquer outro status 2xx implica uma atualização
+              updated++;
             }
           }
 

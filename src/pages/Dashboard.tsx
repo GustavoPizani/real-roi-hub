@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { DateRange } from "react-day-picker";
+import { subDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { DollarSign, FileText, TrendingUp, Percent, AlertCircle, FileDown } from "lucide-react";
 import Sidebar from "@/components/dashboard/Sidebar";
@@ -14,6 +16,8 @@ import CRMUpload from "@/components/crm/CRMUpload";
 import LeadsTable from "@/components/crm/LeadsTable";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePickerWithRange } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
@@ -23,6 +27,12 @@ const Dashboard = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [showChat, setShowChat] = useState(false);
   const [crmRefresh, setCrmRefresh] = useState(0);
+  const [selectedAdId, setSelectedAdId] = useState("all");
+  const [date, setDate] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 29),
+    to: new Date(),
+  });
+  const dashboardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -48,8 +58,29 @@ const Dashboard = () => {
   }, [navigate]);
 
   const { temporalData, devicesData, periodData, adsData, kpis, isUsingMockData, isLoading, error } = useDashboardData(
-    user?.id || ""
+    user?.id || "",
+    date
   );
+
+  const displayedKpis = useMemo(() => {
+    if (selectedAdId === "all" || !adsData.length) {
+      return kpis;
+    }
+    const selectedAd = adsData.find((ad) => ad.id === selectedAdId);
+    if (!selectedAd) return kpis;
+
+    const adLeads = selectedAd.realLeads || 0;
+
+    return {
+      investido: selectedAd.spend,
+      resultado: adLeads,
+      custoPorResultado: adLeads > 0 ? selectedAd.spend / adLeads : 0,
+      // ROI is a portfolio-level metric, so we keep the total ROI.
+      // It wouldn't be accurate to calculate it for a single ad without knowing the revenue from that specific ad.
+      roiReal: kpis.roiReal,
+    };
+  }, [selectedAdId, kpis, adsData]);
+
 
   const handleNavigate = (page: string) => {
     if (page === "chat") {
@@ -58,14 +89,6 @@ const Dashboard = () => {
       setCurrentPage(page);
       setShowChat(false);
     }
-  };
-
-  const handleExportPDF = () => {
-    toast({
-      title: "Exportação iniciada",
-      description: "O relatório PDF será gerado em breve.",
-    });
-    // Would implement PDF generation here
   };
 
   if (!user) {
@@ -93,16 +116,26 @@ const Dashboard = () => {
                 : "Dados atualizados em tempo real"}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {currentPage === "dashboard" && (
-              <Button
-                variant="secondary"
-                onClick={handleExportPDF}
-                className="bg-primary/10 hover:bg-primary/20 text-primary"
-              >
-                <FileDown className="w-4 h-4 mr-2" />
-                Exportar PDF
-              </Button>
+          <div className="flex items-center gap-2">
+            {currentPage === "dashboard" && !isLoading && (
+              <div className="w-[280px]">
+                <DatePickerWithRange date={date} setDate={setDate} />
+              </div>
+            )}
+            {currentPage === "dashboard" && !isLoading && adsData.length > 0 && (
+              <Select value={selectedAdId} onValueChange={setSelectedAdId}>
+                <SelectTrigger className="w-[280px] bg-surface-2 border-border hover:border-muted-foreground transition-colors">
+                  <SelectValue placeholder="Filtrar por anúncio..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os anúncios</SelectItem>
+                  {adsData.map((ad) => (
+                    <SelectItem key={ad.id} value={ad.id}>
+                      {ad.name.length > 40 ? `${ad.name.substring(0, 40)}...` : ad.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
         </header>
@@ -147,12 +180,12 @@ const Dashboard = () => {
 
               {/* Dashboard Content */}
               {!isLoading && !isUsingMockData && (
-                <>
+                <div ref={dashboardRef}>
                   {/* KPIs */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <KPICard
                       title="Investido"
-                      value={`R$ ${kpis.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                      value={`R$ ${displayedKpis.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
                       subtitle="Últimos 30 dias"
                       icon={DollarSign}
                       variant="primary"
@@ -160,7 +193,7 @@ const Dashboard = () => {
                     />
                     <KPICard
                       title="Resultado"
-                      value={kpis.resultado.toString()}
+                      value={displayedKpis.resultado.toString()}
                       subtitle="Leads gerados"
                       icon={FileText}
                       variant="success"
@@ -168,7 +201,7 @@ const Dashboard = () => {
                     />
                     <KPICard
                       title="Custo por Resultado"
-                      value={`R$ ${kpis.custoPorResultado.toFixed(2)}`}
+                      value={`R$ ${displayedKpis.custoPorResultado.toFixed(2)}`}
                       subtitle="CPR médio"
                       icon={TrendingUp}
                       variant="warning"
@@ -176,7 +209,7 @@ const Dashboard = () => {
                     />
                     <KPICard
                       title="ROI Real"
-                      value={`${kpis.roiReal.toFixed(1)}%`}
+                      value={`${displayedKpis.roiReal.toFixed(1)}%`}
                       subtitle="Retorno sobre investimento"
                       icon={Percent}
                       variant="default"
@@ -199,7 +232,7 @@ const Dashboard = () => {
                       <AdsTable ads={adsData} title="Ranking de Anúncios" />
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </>
           )}

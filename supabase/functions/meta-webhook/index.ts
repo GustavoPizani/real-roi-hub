@@ -51,13 +51,16 @@ Deno.serve(async (req) => {
   // Handle incoming lead data via POST request
   if (req.method === 'POST') {
     try {
-      const payload = await req.json()
-      console.log('Received webhook payload:', JSON.stringify(payload, null, 2))
+      console.log("1. Request recebida. Método:", req.method);
+      const body = await req.json();
+      console.log("2. Payload bruto recebido:", JSON.stringify(body));
 
       const userId = url.searchParams.get('user_id')
+      console.log("3. User ID da URL:", userId);
       if (!userId) {
         throw new Error('user_id query parameter is required in the webhook URL.')
       }
+
       if (!encryptionKey) {
         throw new Error('ENCRYPTION_KEY environment variable is not set.')
       }
@@ -68,7 +71,7 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       )
 
-      for (const entry of payload.entry) {
+      for (const entry of body.entry) {
         for (const change of entry.changes) {
           if (change.field === 'leadgen') {
             const leadgenId = change.value.leadgen_id
@@ -117,12 +120,16 @@ Deno.serve(async (req) => {
               continue;
             }
 
+            console.log("4. Tentando salvar lead:", newLead.email);
             const { error: upsertError } = await supabaseAdmin
               .from('crm_leads')
               .upsert(newLead, { onConflict: 'user_id,email' })
 
-            if (upsertError) throw upsertError
-            console.log(`Successfully upserted lead ${leadgenId} for user ${userId}`)
+            if (upsertError) {
+              console.error("ERRO NO UPSERT:", upsertError);
+            } else {
+              console.log("5. Lead salvo com sucesso!");
+            }
           }
         }
       }
