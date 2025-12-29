@@ -1,7 +1,7 @@
   import { useState, useEffect, useCallback } from "react";
   import { DateRange } from "react-day-picker";
   import { supabase } from "@/integrations/supabase/client";
-  import { format } from "date-fns";
+  import { format, isSameDay } from "date-fns";
   import CryptoJS from "crypto-js";
 
   const ENCRYPTION_KEY = "ads-intel-hub-2024";
@@ -12,19 +12,11 @@
     leads: number;
   }
 
-  interface DeviceDataPoint {
-    name: string;
-    value: number;
-  }
-
-  interface PeriodDataPoint {
-    period: string;
-    value: number;
-  }
-
   interface AdData {
     id: string;
     name: string;
+    campaignId?: string;
+    campaignName?: string;
     impressions: number;
     clicks: number;
     spend: number;
@@ -32,6 +24,13 @@
     costPerResult: number;
     realLeads?: number;
     thumbnail_url?: string;
+  }
+
+  interface CampaignData {
+    campaignName: string;
+    ads: AdData[];
+    totalSpend: number;
+    totalLeads: number;
   }
 
   interface KPIs {
@@ -43,8 +42,8 @@
 
   interface DashboardData {
     temporalData: TemporalDataPoint[];
-    devicesData: DeviceDataPoint[];
-    periodData: PeriodDataPoint[];
+    channelsData: { name: string; value: number }[];
+    campaignData: CampaignData[];
     adsData: AdData[];
     kpis: KPIs;
     isUsingMockData: boolean;
@@ -57,7 +56,7 @@
     totalRevenue: number;
     totalLeads: number;
     leadsByDate: { date: string; leads: number }[];
-    allLeads: { fac_id: string | null }[];
+    allLeads: { fac_id: string | null; cadastro: string }[];
   }
 
   const decrypt = (ciphertext: string): string => {
@@ -72,8 +71,8 @@
   export const useDashboardData = (userId: string, dateRange?: DateRange) => {
     const [data, setData] = useState<DashboardData>({
       temporalData: [],
-      devicesData: [],
-      periodData: [],
+      channelsData: [],
+      campaignData: [],
       adsData: [],
       kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
       isUsingMockData: true,
@@ -137,19 +136,28 @@
 
       // Group leads by date for temporal chart
       const leadsByDateMap = new Map<string, number>();
+      const isSingleDay = dateRange?.from && dateRange.to && isSameDay(dateRange.from, dateRange.to);
+
       leads?.forEach(lead => {
         if (lead.cadastro) {
-          // Handles ISO string (YYYY-MM-DDTHH:mm:ss.sssZ) by taking only the date part
-          const dateStr = lead.cadastro.split('T')[0];
-          const [year, month, day] = dateStr.split('-');
-          const formattedDate = `${day}/${month}`;
+          const leadDate = new Date(lead.cadastro);
+          let formattedDate: string;
+
+          if (isSingleDay) {
+            formattedDate = format(leadDate, 'HH:00'); // Group by hour for single day view
+          } else {
+            // Handles ISO string (YYYY-MM-DDTHH:mm:ss.sssZ) by taking only the date part
+            const dateStr = lead.cadastro.split('T')[0];
+            const [_, month, day] = dateStr.split('-');
+            formattedDate = `${day}/${month}`;
+          }
           leadsByDateMap.set(formattedDate, (leadsByDateMap.get(formattedDate) || 0) + 1);
         }
       });
 
       const leadsByDate = Array.from(leadsByDateMap.entries()).map(([date, count]) => ({ date, leads: count }));
 
-      return { totalSales: sales, totalRevenue: revenue, totalLeads, allLeads: leads || [], leadsByDate };
+      return { totalSales: sales, totalRevenue: revenue, totalLeads, allLeads: leads || [], leadsByDate: leadsByDate.sort((a, b) => a.date.localeCompare(b.date)) };
     }, [userId, dateRange]);
 
     const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
@@ -170,8 +178,7 @@
         const aggregated = {
           kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
           temporalData: [] as TemporalDataPoint[],
-          devicesData: [] as DeviceDataPoint[],
-          periodData: [] as PeriodDataPoint[],
+          channelsData: [] as { name: string; value: number }[],
           adsData: [] as AdData[],
         };
 
@@ -203,16 +210,10 @@
             });
           });
 
-          // Aggregate devices data
-          data.devicesData?.forEach((item: DeviceDataPoint) => {
+          // Aggregate channels data
+          data.channelsData?.forEach((item: { name: string; value: number }) => {
             const existing = devicesMap.get(item.name) || 0;
             devicesMap.set(item.name, existing + item.value);
-          });
-
-          // Aggregate period data
-          data.periodData?.forEach((item: PeriodDataPoint) => {
-            const existing = periodMap.get(item.period) || 0;
-            periodMap.set(item.period, existing + item.value);
           });
 
           // Combine all ads
@@ -235,11 +236,8 @@
           .map(([date, values]) => ({ date, ...values }))
           .sort((a, b) => a.date.localeCompare(b.date));
 
-        aggregated.devicesData = Array.from(devicesMap.entries())
+        aggregated.channelsData = Array.from(devicesMap.entries())
           .map(([name, value]) => ({ name, value }));
-
-        aggregated.periodData = Array.from(periodMap.entries())
-          .map(([period, value]) => ({ period, value }));
 
         return aggregated;
       } catch (error) {
@@ -281,8 +279,8 @@
                 roiReal: 0,
               },
               temporalData: crmData.leadsByDate.map(item => ({ date: item.date, investimento: 0, leads: item.leads })).sort((a, b) => a.date.localeCompare(b.date)),
-              devicesData: [],
-              periodData: [],
+              channelsData: [],
+              campaignData: [],
               adsData: [],
             }));
             return;
@@ -291,28 +289,45 @@
           const metaData = await fetchMetaData(accessToken, adAccountIds);
 
           if (!metaData) {
-            throw new Error("Erro ao buscar dados da Meta. Verifique suas credenciais.");
+            let errorMessage = "Erro ao buscar dados da Meta. Verifique suas credenciais.";
+            if (metaData && metaData.error) {
+              errorMessage += ` Detalhes: ${metaData.error}`;
+            }
+            throw new Error(errorMessage);
+
+
           }
 
-          // Calculate realLeads per ad by cross-referencing with CRM data
+          // Calculate realLeads per ad by cross-referencing with CRM data from the period
           const leadsByAdMap = new Map<string, number>();
           crmData.allLeads?.forEach(lead => {
             if (lead.fac_id) {
               leadsByAdMap.set(lead.fac_id, (leadsByAdMap.get(lead.fac_id) || 0) + 1);
             }
           });
+          
+          const adsWithRealLeads = metaData.adsData.map((ad: AdData) => ({
+            ...ad,
+            realLeads: leadsByAdMap.get(ad.id) || 0,
+          }));
 
-          metaData.adsData.forEach((ad: AdData) => {
-            ad.realLeads = leadsByAdMap.get(ad.id) || 0;
+          // Group ads by campaign
+          const campaigns: Record<string, CampaignData> = {};
+          adsWithRealLeads.forEach((ad: AdData) => {
+            const campaignName = ad.campaignName || 'Sem Campanha';
+            if (!campaigns[campaignName]) {
+              campaigns[campaignName] = { campaignName, ads: [], totalSpend: 0, totalLeads: 0 };
+            }
+            campaigns[campaignName].ads.push(ad);
+            campaigns[campaignName].totalSpend += ad.spend;
+            campaigns[campaignName].totalLeads += ad.realLeads || 0;
           });
 
-          // Both Meta and CRM data are available, calculate final KPIs
           const investment = metaData.kpis.investido;
           const totalLeadsFromCRM = crmData.totalLeads;
           
           const custoPorResultado = totalLeadsFromCRM > 0 ? investment / totalLeadsFromCRM : 0;
 
-          // Calculate ROI Real
           const roiReal = investment > 0 
             ? ((crmData.totalRevenue - investment) / investment) * 100 
             : 0;
@@ -330,9 +345,9 @@
 
           setData({
             temporalData: finalTemporalData,
-            devicesData: metaData.devicesData || [],
-            periodData: metaData.periodData || [],
-            adsData: metaData.adsData,
+            channelsData: metaData.channelsData || [],
+            campaignData: Object.values(campaigns),
+            adsData: adsWithRealLeads,
             kpis: {
               investido: investment,
               resultado: totalLeadsFromCRM,

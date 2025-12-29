@@ -51,7 +51,14 @@ Deno.serve(async (req) => {
   // POST - Recebimento de Leads
   if (req.method === 'POST') {
     try {
-      const payload = await req.json()
+      // PROTEÇÃO: Lê como texto primeiro para evitar erro "Unexpected end of JSON"
+      const bodyText = await req.text();
+      if (!bodyText) {
+        console.error('[WEBHOOK] Erro: Corpo da requisição vazio');
+        return new Response('Empty body', { status: 400 });
+      }
+
+      const payload = JSON.parse(bodyText);
       console.log('[WEBHOOK] 1. Payload recebido:', JSON.stringify(payload, null, 2))
 
       const userId = url.searchParams.get('user_id')
@@ -66,111 +73,98 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       )
 
-      for (const entry of payload.entry) {
-        for (const change of entry.changes) {
-          if (change.field === 'leadgen') {
-            const leadgenId = change.value.leadgen_id
-            const formId = change.value.form_id
-            const pageId = change.value.page_id
-            const createdTime = change.value.created_time
-            
-            console.log('[WEBHOOK] 3. Processando Leadgen:', {
-              leadgenId,
-              formId,
-              pageId,
-              createdTime
-            })
-            
-            // Busca o token do usuário
-            console.log('[WEBHOOK] 4. Buscando token do usuário...');
-            const { data: settings, error: settingsError } = await supabaseAdmin
-              .from('api_settings')
-              .select('encrypted_value')
-              .eq('user_id', userId)
-              .eq('setting_key', 'META_ACCESS_TOKEN')
-              .single()
+      // Itera sobre as entradas enviadas pela Meta
+      if (payload.entry) {
+        for (const entry of payload.entry) {
+          if (!entry.changes) continue;
+          
+          for (const change of entry.changes) {
+            if (change.field === 'leadgen') {
+              const leadgenId = change.value.leadgen_id
+              const createdTime = change.value.created_time
+              
+              console.log('[WEBHOOK] 3. Processando Leadgen ID:', leadgenId);
+              
+              // Busca o token do usuário no banco
+              const { data: settings, error: settingsError } = await supabaseAdmin
+                .from('api_settings')
+                .select('encrypted_value')
+                .eq('user_id', userId)
+                .eq('setting_key', 'META_ACCESS_TOKEN')
+                .single()
 
-            if (settingsError) {
-              console.error('[WEBHOOK] ERRO ao buscar settings:', settingsError);
-              throw new Error('Erro ao buscar token no banco')
+              if (settingsError || !settings) {
+                console.error('[WEBHOOK] ERRO: Token não encontrado ou erro no banco', settingsError);
+                throw new Error('Token não encontrado no banco');
+              }
+
+              // Descriptografia do Token
+              const accessToken = decrypt(settings.encrypted_value, encryptionKey!)
+              if (!accessToken) {
+                console.error('[WEBHOOK] ERRO: Falha ao descriptografar token');
+                throw new Error('Falha ao descriptografar token')
+              }
+              
+              // Busca os dados completos do Lead na Graph API da Meta
+              console.log('[WEBHOOK] 4. Buscando detalhes na Meta Graph API...');
+              const leadRes = await fetch(`https://graph.facebook.com/v18.0/${leadgenId}?access_token=${accessToken}`)
+              const leadData = await leadRes.json()
+
+              if (leadData.error) {
+                console.error('[WEBHOOK] ERRO da Meta API:', leadData.error);
+                throw new Error(`Erro Meta API: ${leadData.error.message}`)
+              }
+
+              // Mapeamento dos campos do formulário
+              const fieldData: FieldDataItem[] = leadData.field_data || []
+              const getField = (name: string): string | null => 
+                fieldData.find((f: FieldDataItem) => f.name === name)?.values[0] || null
+
+              const fullName = getField('full_name');
+              const firstName = getField('first_name') || '';
+              const lastName = getField('last_name') || '';
+              const nome = fullName || `${firstName} ${lastName}`.trim() || 'Sem Nome';
+
+              const newLead = {
+                user_id: userId,
+                email: getField('email'),
+                nome: nome,
+                telefone: getField('phone_number'),
+                canal: 'Facebook Ads',
+                situacao_atendimento: 'Novo',
+                fac_id: leadgenId,
+                cadastro: createdTime ? new Date(createdTime * 1000).toISOString() : new Date().toISOString(),
+                atualizacao: new Date().toISOString()
+              }
+
+              console.log('[WEBHOOK] 5. Tentando salvar no CRM:', newLead.email);
+
+              const { error: dbError } = await supabaseAdmin
+                .from('crm_leads')
+                .upsert(newLead, { onConflict: 'user_id,email' })
+
+              if (dbError) {
+                console.error('[WEBHOOK] ERRO ao salvar no banco:', dbError);
+                throw dbError
+              }
+              console.log('[WEBHOOK] 6. Sucesso! Lead salvo no CRM.');
             }
-            if (!settings) {
-              console.error('[WEBHOOK] ERRO: Token não encontrado no banco');
-              throw new Error('Token não encontrado no banco')
-            }
-            console.log('[WEBHOOK] 5. Token encontrado, descriptografando...');
-
-            const accessToken = decrypt(settings.encrypted_value, encryptionKey!)
-            if (!accessToken) {
-              console.error('[WEBHOOK] ERRO: Falha ao descriptografar token');
-              throw new Error('Falha ao descriptografar token')
-            }
-            console.log('[WEBHOOK] 6. Token descriptografado com sucesso');
-            
-            // Busca dados reais na Meta Graph API
-            console.log('[WEBHOOK] 7. Buscando detalhes do lead na Graph API...');
-            const leadRes = await fetch(`https://graph.facebook.com/v18.0/${leadgenId}?access_token=${accessToken}`)
-            const leadData = await leadRes.json()
-            console.log('[WEBHOOK] 8. Resposta da Graph API:', JSON.stringify(leadData, null, 2));
-
-            if (leadData.error) {
-              console.error('[WEBHOOK] ERRO da Meta API:', leadData.error);
-              throw new Error(`Erro Meta API: ${leadData.error.message}`)
-            }
-
-            const fieldData: FieldDataItem[] = leadData.field_data || []
-            const getField = (name: string): string | null => 
-              fieldData.find((f: FieldDataItem) => f.name === name)?.values[0] || null
-
-            // Mapeamento de nome: verifica full_name primeiro
-            const fullName = getField('full_name');
-            const firstName = getField('first_name') || '';
-            const lastName = getField('last_name') || '';
-            const nome = fullName || `${firstName} ${lastName}`.trim() || 'Sem Nome';
-
-            // Data de cadastro: usa created_time da Meta se disponível
-            const cadastroDate = createdTime 
-              ? new Date(createdTime * 1000).toISOString() 
-              : new Date().toISOString();
-
-            const newLead = {
-              user_id: userId,
-              email: getField('email'),
-              nome: nome,
-              telefone: getField('phone_number'),
-              canal: 'Facebook Lead Form',
-              situacao_atendimento: 'Novo',
-              fac_id: leadgenId,
-              cadastro: cadastroDate,
-            }
-
-            console.log('[WEBHOOK] 9. Lead mapeado:', JSON.stringify(newLead, null, 2));
-            console.log('[WEBHOOK] 10. Salvando no CRM...');
-
-            const { error: dbError } = await supabaseAdmin
-              .from('crm_leads')
-              .upsert(newLead, { onConflict: 'user_id,email' })
-
-            if (dbError) {
-              console.error('[WEBHOOK] ERRO ao salvar no banco:', dbError);
-              throw dbError
-            }
-            console.log('[WEBHOOK] 11. Lead salvo com sucesso!');
           }
         }
       }
       
-      // Sempre retorna 200 para a Meta não reenviar
-      console.log('[WEBHOOK] 12. Processamento concluído com sucesso');
       return new Response(JSON.stringify({ success: true }), { 
         status: 200, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       })
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      console.error('[WEBHOOK] ERRO CRÍTICO:', errorMessage);
-      // Retorna 200 mesmo com erro para evitar retentativas da Meta
-      return new Response(JSON.stringify({ error: errorMessage, processed: false }), { 
+      console.error('[WEBHOOK] FALHA NO PROCESSAMENTO:', errorMessage);
+      
+      // Retornamos 200 mesmo em erro de lógica para evitar que a Meta 
+      // tente reenviar o mesmo erro repetidamente (Flood)
+      return new Response(JSON.stringify({ error: errorMessage }), { 
         status: 200, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       })

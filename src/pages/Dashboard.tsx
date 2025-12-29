@@ -9,9 +9,8 @@ import jsPDF from "jspdf";
 import Sidebar from "@/components/dashboard/Sidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import TemporalChart from "@/components/dashboard/TemporalChart";
-import DevicesChart from "@/components/dashboard/DevicesChart";
-import PeriodChart from "@/components/dashboard/PeriodChart";
-import AdsTable from "@/components/dashboard/AdsTable";
+import ChannelBreakdown from "@/components/dashboard/ChannelBreakdown";
+import CampaignRanking from "@/components/dashboard/CampaignRanking";
 import AIChatPanel from "@/components/dashboard/AIChatPanel";
 import APISettings from "@/components/settings/APISettings";
 import CRMUpload from "@/components/crm/CRMUpload";
@@ -59,7 +58,7 @@ const Dashboard = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const { temporalData, devicesData, periodData, adsData, kpis, isUsingMockData, isLoading, error } = useDashboardData(
+  const { temporalData, channelsData, campaignData, adsData, kpis, isUsingMockData, isLoading, error } = useDashboardData(
     user?.id || "",
     date
   );
@@ -203,7 +202,7 @@ const Dashboard = () => {
                 onClick={handleExportPDF}
                 className="gap-2"
               >
-                <FileDown className="w-4 h-4" />
+                <FileDown className="w-4 h-4 mr-2" />
                 Exportar PDF
               </Button>
             )}
@@ -292,15 +291,12 @@ const Dashboard = () => {
                     <div className="lg:col-span-2">
                       <TemporalChart data={temporalData} title="Visão Temporal" />
                     </div>
-                    <DevicesChart data={devicesData} title="Devices" />
+                    <ChannelBreakdown data={channelsData} title="Canais de Entrada" />
                   </div>
 
-                  {/* Charts Row 2 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                    <PeriodChart data={periodData} title="Período do Dia" />
-                    <div className="lg:col-span-2">
-                      <AdsTable ads={adsData} title="Ranking de Anúncios" />
-                    </div>
+                  {/* Charts Row 2 -> now just CampaignRanking */}
+                  <div className="mb-6">
+                    <CampaignRanking campaigns={campaignData} title="Ranking de Campanhas" />
                   </div>
                 </div>
               )}

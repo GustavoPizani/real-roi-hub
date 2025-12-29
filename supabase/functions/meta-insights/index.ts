@@ -12,6 +12,8 @@ Deno.serve(async (req) => {
     const { accessToken, adAccountId, since, until } = await req.json();
 
     if (!accessToken || !adAccountId) {
+      console.error("Missing access token or ad account ID. accessToken:", !!accessToken, "adAccountId:", !!adAccountId);
+
       return new Response(
         JSON.stringify({ error: "Missing access token or ad account ID" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -19,12 +21,17 @@ Deno.serve(async (req) => {
     }
 
     const time_range = since && until ? JSON.stringify({ since, until }) : undefined;
-    const date_preset = !time_range ? 'last_30d' : undefined;
+    let date_preset = !time_range ? 'last_30d' : undefined;
+
+    if (since === "" || until === "") {
+      console.warn("Empty 'since' or 'until' parameter received. Using 'last_30d' as fallback.");
+      date_preset = "last_30d";
+    }
 
     console.log(`Fetching Meta insights for account: ${adAccountId} with range: ${time_range || date_preset}`);
 
     // Fetch account insights
-    const insightsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/insights`;
+    const insightsUrl = `https://graph.facebook.com/v18.0/${adAccountId}/insights`;
     const insightsParams = new URLSearchParams({
       access_token: accessToken,
       fields: "spend,impressions,clicks,actions,cost_per_action_type",
@@ -46,10 +53,10 @@ Deno.serve(async (req) => {
     }
 
     // Fetch ads with insights
-    const adsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/ads`;
+    const adsUrl = `https://graph.facebook.com/v18.0/${adAccountId}/ads`;
     const adsParams = new URLSearchParams({
       access_token: accessToken,
-      fields: "id,name,creative{thumbnail_url},insights{spend,impressions,clicks,actions,cost_per_action_type}",
+      fields: "id,name,campaign{id,name},creative{thumbnail_url},insights{spend,impressions,clicks,actions,cost_per_action_type}",
       limit: "50",
     });
 
@@ -63,30 +70,16 @@ Deno.serve(async (req) => {
     const deviceParams = new URLSearchParams({
       access_token: accessToken,
       fields: "impressions",
-      breakdowns: "device_platform",
+      breakdowns: "publisher_platform,platform_position",
       level: "account",
     });
 
     if (time_range) deviceParams.append('time_range', time_range);
     if (date_preset) deviceParams.append('date_preset', date_preset);
 
-    const deviceResponse = await fetch(`${insightsUrl}?${deviceParams}`);
-    const deviceData = await deviceResponse.json();
-
-    // Fetch insights breakdown by hour
-    const hourParams = new URLSearchParams({
-      access_token: accessToken,
-      fields: "impressions",
-      breakdowns: "hourly_stats_aggregated_by_audience_time_zone",
-      level: "account",
-    });
-
-    if (time_range) hourParams.append('time_range', time_range);
-    if (date_preset) hourParams.append('date_preset', date_preset);
-
-    const hourResponse = await fetch(`${insightsUrl}?${hourParams}`);
-    const hourData = await hourResponse.json();
-
+    const channelsResponse = await fetch(`${insightsUrl}?${deviceParams}`);
+    const channelsDataRaw = await channelsResponse.json();
+    
     // Fetch daily insights for temporal chart
     const dailyParams = new URLSearchParams({
       access_token: accessToken,
@@ -115,28 +108,10 @@ Deno.serve(async (req) => {
     const costPerResult = conversions > 0 ? spend / conversions : 0;
 
     // Process device data
-    const devicesBreakdown = (deviceData.data || []).map((item: any) => ({
-      name: item.device_platform || "Unknown",
+    const channelsBreakdown = (channelsDataRaw.data || []).map((item: any) => ({
+      name: `${item.publisher_platform} ${item.platform_position}`.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
       value: parseInt(item.impressions || "0"),
     }));
-
-    // Process hourly data into periods
-    const periods = { morning: 0, afternoon: 0, evening: 0, night: 0 };
-    (hourData.data || []).forEach((item: any) => {
-      const hour = parseInt(item.hourly_stats_aggregated_by_audience_time_zone || "0");
-      const impressions = parseInt(item.impressions || "0");
-      if (hour >= 6 && hour < 12) periods.morning += impressions;
-      else if (hour >= 12 && hour < 18) periods.afternoon += impressions;
-      else if (hour >= 18 && hour < 22) periods.evening += impressions;
-      else periods.night += impressions;
-    });
-
-    const periodData = [
-      { period: "Manhã", value: periods.morning },
-      { period: "Tarde", value: periods.afternoon },
-      { period: "Noite", value: periods.evening },
-      { period: "Madrugada", value: periods.night },
-    ];
 
     // Process daily data for temporal chart
     const temporalData = (dailyData.data || []).map((item: any) => {
@@ -159,6 +134,8 @@ Deno.serve(async (req) => {
       return {
         id: ad.id,
         name: ad.name,
+        campaignId: ad.campaign?.id,
+        campaignName: ad.campaign?.name,
         thumbnail_url: ad.creative?.thumbnail_url || null,
         impressions: parseInt(insight.impressions || "0"),
         clicks: parseInt(insight.clicks || "0"),
@@ -180,8 +157,7 @@ Deno.serve(async (req) => {
           clicks,
         },
         temporalData,
-        devicesData: devicesBreakdown,
-        periodData,
+        channelsData: channelsBreakdown,
         adsData: adsProcessed,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
