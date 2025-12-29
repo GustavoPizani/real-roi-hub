@@ -162,6 +162,12 @@
 
     const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
       try {
+        // Adicione esta validação antes do Promise.all
+        if (!accessToken || adAccountIds.length === 0) {
+          console.error("Credenciais ausentes para a Meta");
+          return null;
+        }
+
         const since = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
         const until = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
 
@@ -331,6 +337,37 @@
           const roiReal = investment > 0 
             ? ((crmData.totalRevenue - investment) / investment) * 100 
             : 0;
+
+          // Lógica de Custo Incremental (Solicitada por você)
+          const processedLeads = crmData.allLeads
+            .filter(lead => lead.cadastro)
+            .sort((a, b) => new Date(a.cadastro).getTime() - new Date(b.cadastro).getTime())
+            .map((lead, index, array) => {
+              const leadTime = new Date(lead.cadastro);
+              const dateKey = format(leadTime, "dd/MM");
+              
+              // Pega o gasto total do dia vindo da Meta
+              const dailySpend = metaData.temporalData.find(d => d.date === dateKey)?.investimento || 0;
+              
+              // Distribuição linear do gasto (24h = 1440 min)
+              const minutesElapsed = leadTime.getHours() * 60 + leadTime.getMinutes();
+              const currentCumulativeSpend = (dailySpend / 1440) * minutesElapsed;
+              
+              let previousSpend = 0;
+              const leadAnterior = array[index - 1];
+              
+              // Se o lead anterior for do mesmo dia, subtraímos o acumulado dele
+              if (leadAnterior && new Date(leadAnterior.cadastro).toDateString() === leadTime.toDateString()) {
+                const prevDate = new Date(leadAnterior.cadastro);
+                const prevMinutes = prevDate.getHours() * 60 + prevDate.getMinutes();
+                previousSpend = (dailySpend / 1440) * prevMinutes;
+              }
+              
+              return { 
+                ...lead, 
+                individualCost: currentCumulativeSpend - previousSpend 
+              };
+            });
 
           // Merge temporal data from Meta (investment) and CRM (leads)
           const temporalMap = new Map<string, { investimento: number; leads: number }>();
