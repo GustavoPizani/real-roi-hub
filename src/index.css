@@ -210,4 +210,25 @@
       background-position: 100% 50%;
     }
   }
+
+  /* PDF Export Mode - Light theme for printing */
+  .pdf-export-mode {
+    background-color: #ffffff !important;
+    color: #1a1a2e !important;
+  }
+
+  .pdf-export-mode .glass-card {
+    background: #f8f9fa !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .pdf-export-mode * {
+    color: #1a1a2e !important;
+    border-color: #e2e8f0 !important;
+  }
+
+  .pdf-export-mode .text-muted-foreground {
+    color: #64748b !important;
+  }
 }

@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { DateRange } from "react-day-picker";
-import { subDays } from "date-fns";
+import { subDays, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { DollarSign, FileText, TrendingUp, Percent, AlertCircle, FileDown } from "lucide-react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import Sidebar from "@/components/dashboard/Sidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import TemporalChart from "@/components/dashboard/TemporalChart";
@@ -75,11 +77,68 @@ const Dashboard = () => {
       investido: selectedAd.spend,
       resultado: adLeads,
       custoPorResultado: adLeads > 0 ? selectedAd.spend / adLeads : 0,
-      // ROI is a portfolio-level metric, so we keep the total ROI.
-      // It wouldn't be accurate to calculate it for a single ad without knowing the revenue from that specific ad.
       roiReal: kpis.roiReal,
     };
   }, [selectedAdId, kpis, adsData]);
+
+  const handleExportPDF = useCallback(async () => {
+    if (!dashboardRef.current) return;
+
+    toast({
+      title: "Gerando PDF...",
+      description: "Aguarde enquanto preparamos seu relatório.",
+    });
+
+    try {
+      // Add light theme temporarily for PDF
+      const originalBg = dashboardRef.current.style.backgroundColor;
+      dashboardRef.current.style.backgroundColor = "#ffffff";
+      dashboardRef.current.classList.add("pdf-export-mode");
+
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      // Restore original styles
+      dashboardRef.current.style.backgroundColor = originalBg;
+      dashboardRef.current.classList.remove("pdf-export-mode");
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgX = (pdfWidth - imgWidth * ratio) / 2;
+      const imgY = 10;
+
+      pdf.addImage(imgData, "PNG", imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+      
+      const dateStr = format(new Date(), "yyyy-MM-dd");
+      pdf.save(`dashboard-report-${dateStr}.pdf`);
+
+      toast({
+        title: "PDF exportado!",
+        description: "O relatório foi salvo com sucesso.",
+      });
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast({
+        title: "Erro ao exportar",
+        description: "Não foi possível gerar o PDF.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
 
 
   const handleNavigate = (page: string) => {
@@ -136,6 +195,17 @@ const Dashboard = () => {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {currentPage === "dashboard" && !isLoading && !isUsingMockData && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleExportPDF}
+                className="gap-2"
+              >
+                <FileDown className="w-4 h-4" />
+                Exportar PDF
+              </Button>
             )}
           </div>
         </header>
