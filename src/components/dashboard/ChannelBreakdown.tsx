@@ -10,7 +10,31 @@ interface ChannelBreakdownProps {
   title: string;
 }
 
-const COLORS = ['#00C49F', '#0088FE', '#FFBB28', '#FF8042', '#AF19FF', '#FF19A3'];
+// Cores específicas para cada plataforma para melhor identificação
+const PLATFORM_COLORS = {
+  facebook: '#0088FE', // Azul
+  instagram: '#AF19FF', // Roxo
+  messenger: '#00C49F', // Verde
+  audience_network: '#FFBB28', // Laranja
+  default: '#FF8042', // Fallback
+};
+
+// Função para atribuir cor baseada no nome da plataforma
+const getColor = (name: string) => {
+  const lowerName = name.toLowerCase();
+  if (lowerName.includes('facebook')) return PLATFORM_COLORS.facebook;
+  if (lowerName.includes('instagram')) return PLATFORM_COLORS.instagram;
+  if (lowerName.includes('messenger')) return PLATFORM_COLORS.messenger;
+  if (lowerName.includes('audience')) return PLATFORM_COLORS.audience_network;
+  return PLATFORM_COLORS.default;
+};
+
+const formatName = (name: string) => 
+  name
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase())
+    .replace('Facebook', 'FB')
+    .replace('Instagram', 'IG');
 
 const ChannelBreakdown = ({ data, title }: ChannelBreakdownProps) => {
   if (!data || data.length === 0) {
@@ -24,28 +48,48 @@ const ChannelBreakdown = ({ data, title }: ChannelBreakdownProps) => {
     );
   }
 
+  const processedData = data.map(item => ({
+    ...item,
+    name: formatName(item.name),
+  }));
+
   return (
     <div className="glass-card p-6 flex flex-col h-full">
       <h3 className="font-semibold mb-4">{title}</h3>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
             <Pie
-              data={data}
+              data={processedData}
               cx="50%"
               cy="50%"
               labelLine={false}
-              outerRadius={80}
+              outerRadius="80%"
               fill="#8884d8"
               dataKey="value"
               nameKey="name"
             >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              {processedData.map((entry) => (
+                <Cell key={`cell-${entry.name}`} fill={getColor(entry.name)} />
               ))}
             </Pie>
-            <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
-            <Legend />
+            <Tooltip
+              formatter={(value: number) => value.toLocaleString('pt-BR')}
+              contentStyle={{
+                backgroundColor: '#1a1f2c',
+                borderColor: 'hsl(var(--border))',
+                borderRadius: 'var(--radius)',
+                backdropFilter: 'blur(4px)',
+              }}
+              itemStyle={{ color: '#ffffff' }}
+            />
+            <Legend 
+              layout="vertical" 
+              verticalAlign="middle" 
+              align="right"
+              iconSize={10}
+              wrapperStyle={{ paddingLeft: '20px', maxHeight: '200px', overflowY: 'auto' }}
+            />
           </PieChart>
         </ResponsiveContainer>
       </div>

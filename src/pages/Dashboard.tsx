@@ -10,6 +10,7 @@ import Sidebar from "@/components/dashboard/Sidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import TemporalChart from "@/components/dashboard/TemporalChart";
 import ChannelBreakdown from "@/components/dashboard/ChannelBreakdown";
+import LeadCostInsights from "@/components/dashboard/LeadCostInsights";
 import CampaignRanking from "@/components/dashboard/CampaignRanking";
 import AIChatPanel from "@/components/dashboard/AIChatPanel";
 import APISettings from "@/components/settings/APISettings";
@@ -58,7 +59,7 @@ const Dashboard = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const { temporalData, channelsData, campaignData, adsData, kpis, isUsingMockData, isLoading, error } = useDashboardData(
+  const { temporalData, channelsData, campaignData, adsData, kpis, leadCostInsights, isUsingMockData, isLoading, error } = useDashboardData(
     user?.id || "",
     date
   );
@@ -250,6 +251,11 @@ const Dashboard = () => {
               {/* Dashboard Content */}
               {!isLoading && !isUsingMockData && (
                 <div ref={dashboardRef}>
+                  <LeadCostInsights 
+                    cheapest={leadCostInsights?.cheapest} 
+                    mostExpensive={leadCostInsights?.mostExpensive} 
+                  />
+
                   {/* KPIs */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <KPICard
@@ -307,8 +313,12 @@ const Dashboard = () => {
 
           {currentPage === "crm" && (
             <div className="space-y-6">
-              <CRMUpload userId={user.id} onUploadComplete={() => setCrmRefresh((prev) => prev + 1)} />
-              <LeadsTable userId={user.id} refreshTrigger={crmRefresh} />
+              <CRMUpload 
+                userId={user.id} 
+                onUploadComplete={() => setCrmRefresh((prev) => prev + 1)} 
+                campaigns={campaignData}
+              />
+              <LeadsTable userId={user.id} refreshTrigger={crmRefresh} campaigns={campaignData} />
             </div>
           )}
         </main>

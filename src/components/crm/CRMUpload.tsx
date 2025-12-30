@@ -1,22 +1,70 @@
 import { useState, useCallback, useRef } from "react";
 import { Upload, FileSpreadsheet, CheckCircle2, Loader2, Facebook, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import Papa from "papaparse";
 
+interface CampaignData {
+  campaignName: string;
+}
+
 interface CRMUploadProps {
   userId: string;
   onUploadComplete: () => void;
+  campaigns: CampaignData[];
 }
 
-const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
+const formatAndScanLead = (row: any, campaignName: string, userId: string) => {
+  // Mapeamento exato das colunas do seu CSV anexado
+  const rawPhone = row.phone || ""; 
+  const rawId = row.id || ""; // ID do lead (ex: l:2097...)
+  const rawAdId = row.ad_id || ""; // ID do anúncio (ex: ag:1202...)
+  const rawDate = row.created_time || "";
+
+  // --- LIMPEZA DE TELEFONE (Remove p:+, espaços e não-números) ---
+  // Substitui o "p:+" por vazio e depois remove tudo que não for dígito
+  let cleanPhone = rawPhone.toString().replace(/p:\+/g, '').replace(/\D/g, '');
+  
+  // Adiciona o prefixo do país se faltar
+  if (cleanPhone.length === 11 || cleanPhone.length === 10) {
+    cleanPhone = `55${cleanPhone}`;
+  }
+
+  // --- IDENTIFICAÇÃO DE SINCRONIA ---
+  // Se o ID do anúncio começa com 'ag:', marcamos a origem
+  const isMetaTrace = rawAdId.toString().startsWith('ag:');
+
+  return {
+    user_id: userId,
+    email: row.email || "",
+    nome: row.full_name || "Sem Nome",
+    telefone: cleanPhone,
+    cadastro: new Date(rawDate).toISOString(),
+    campanha_nome: campaignName,
+    fac_id: rawAdId, // Usamos o ag: como fac_id para o seu filtro de rastro
+    origem_importacao: isMetaTrace ? 'meta_trace' : 'facebook_csv',
+    situacao_atendimento: 'Novo'
+  };
+};
+
+const mapStatus = (status: string): string => {
+  const lowerStatus = status?.toLowerCase() || '';
+  if (lowerStatus.includes('interessado')) return 'Lead';
+  if (lowerStatus.includes('venda')) return 'Purchase';
+  if (lowerStatus.includes('visita')) return 'Schedule';
+  return status;
+};
+
+const CRMUpload = ({ userId, onUploadComplete, campaigns }: CRMUploadProps) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStats, setUploadStats] = useState<{ inserted: number; updated: number } | null>(null);
   const { toast } = useToast();
 
   const facebookInputRef = useRef<HTMLInputElement>(null);
   const crmInputRef = useRef<HTMLInputElement>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<string>("");
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, flow: 'facebook' | 'crm') => {
     const file = e.target.files?.[0];
@@ -27,6 +75,10 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
   };
 
   const processCSV = async (file: File, flow: 'facebook' | 'crm') => {
+    if (!selectedCampaign) {
+        toast({ title: "Erro", description: "Por favor, selecione uma campanha antes de fazer o upload.", variant: "destructive" });
+        return;
+    }
     setIsUploading(true);
     setUploadStats(null);
 
@@ -38,96 +90,67 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
       delimiter,
       complete: async (results) => {
         try {
-          let inserted = 0;
-          let updated = 0;
+          if (flow === 'facebook') {
+            const leadsParaSalvar = (results.data as any[])
+              .filter((row: any) => row.email || row.phone)
+              .map((row) => formatAndScanLead(row, selectedCampaign, userId));
 
-          for (const row of results.data as any[]) {
-            const email = (row.email || row.Email)?.trim();
-            if (!email) {
-              console.warn("Linha pulada por falta de e-mail:", row);
-              continue; // Email is essential for both flows
-            }
+            console.log("=== SCAN DE DIAGNÓSTICO CRM (FACEBOOK) ===");
+            console.log("Total Processado:", leadsParaSalvar.length);
+            if (leadsParaSalvar.length > 0) console.log("Exemplo de Lead:", leadsParaSalvar[0]);
 
-            const { data: existingLead } = await supabase
+            const { error } = await supabase
               .from('crm_leads')
-              .select('id, fac_id')
-              .eq('user_id', userId)
-              .eq('email', email)
-              .maybeSingle();
+              .upsert(leadsParaSalvar, { onConflict: 'user_id,email' });
 
-            if (flow === 'facebook') {
-              const newFacId = row.ad_id?.trim();
-              if (existingLead) {
-                if (!existingLead.fac_id && newFacId) {
-                  const { error } = await supabase
-                    .from('crm_leads')
-                    .update({ fac_id: newFacId, atualizacao: new Date().toISOString() })
-                    .eq('id', existingLead.id);
-                  if (error) throw error;
-                  updated++;
-                }
-              } else {
-                const newLead = {
-                  user_id: userId,
-                  nome: row.full_name?.trim(),
-                  email: email,
-                  telefone: row.phone_number?.trim(),
-                  fac_id: newFacId,
-                  cadastro: row.created_time ? new Date(parseInt(row.created_time) * 1000).toISOString() : new Date().toISOString(),
-                  canal: 'Facebook Leads',
-                  situacao_atendimento: 'Novo',
-                  atualizacao: new Date().toISOString(),
-                };
-                const { error } = await supabase.from('crm_leads').insert(newLead);
-                if (error) throw error;
-                inserted++;
-              }
-            } else if (flow === 'crm') {
-              if (existingLead) {
-                const updatePayload: { [key: string]: any } = {
-                  atualizacao: new Date().toISOString(),
-                };
-                if (row['Situação Atendimento']) updatePayload.situacao_atendimento = row['Situação Atendimento'].trim();
-                if (row['Corretor']) updatePayload.corretor = row['Corretor'].trim();
-                if (row['Fac']) updatePayload.fac_id = row['Fac'].trim();
+            if (error) throw error;
 
-                const { error } = await supabase
-                  .from('crm_leads')
-                  .update(updatePayload)
-                  .eq('id', existingLead.id);
-                if (error) throw error;
-                updated++;
-              } else {
-                const newLead = {
-                  user_id: userId,
-                  nome: row.Cliente?.trim(),
-                  email: email,
-                  telefone: row.Telefone?.trim(),
-                  situacao_atendimento: row['Situação Atendimento']?.trim() || 'Novo',
-                  corretor: row.Corretor?.trim(),
-                  fac_id: row.Fac?.trim(),
-                  canal: 'CRM Sync',
-                  cadastro: new Date().toISOString(),
-                  atualizacao: new Date().toISOString(),
-                };
-                const { error } = await supabase.from('crm_leads').insert(newLead);
-                if (error) throw error;
-                inserted++;
-              }
-            }
+            toast({ title: "Sucesso!", description: `${leadsParaSalvar.length} leads do Facebook importados.` });
+            onUploadComplete();
+          } else {
+            // 1. Ler os dados do CSV do CRM (normalmente delimitado por vírgula)
+            const crmRows = results.data as any[];
+            
+            // 2. Preparar os dados para o Cruzamento
+            const leadsParaSincronizar = crmRows.map(row => {
+              // Limpeza de telefone igual a do Facebook para garantir o "Match"
+              const rawPhone = row.telefone || row.Telefone || "";
+              let cleanPhone = rawPhone.toString().replace(/\D/g, '');
+              if (cleanPhone.length === 11 || cleanPhone.length === 10) cleanPhone = `55${cleanPhone}`;
+
+              return {
+                user_id: userId,
+                email: row.email || row.Email,
+                telefone: cleanPhone,
+                nome: row.nome || row.Nome,
+                situacao_atendimento: row.situacao_atendimento || row.Status || 'Novo',
+                campanha_nome: selectedCampaign, // Vincula à campanha selecionada no Select
+                origem_importacao: 'crm_manual'
+              };
+            }).filter(lead => lead.email || lead.telefone);
+
+            // 3. Executar o Upsert (Ele vai encontrar o lead pelo email e atualizar o status)
+            const { error } = await supabase
+              .from('crm_leads')
+              .upsert(leadsParaSincronizar, { 
+                onConflict: 'user_id,email', // Se o e-mail for igual, ele atualiza
+                ignoreDuplicates: false 
+              });
+
+            if (error) throw error;
+
+            toast({ 
+              title: "Sincronização Concluída", 
+              description: `${leadsParaSincronizar.length} leads atualizados com dados do CRM.` 
+            });
+            
+            onUploadComplete();
           }
-
-          setUploadStats({ inserted, updated });
-          toast({
-            title: "Upload concluído",
-            description: `${inserted} leads inseridos, ${updated} atualizados.`,
-          });
-          onUploadComplete();
         } catch (error: any) {
-          console.error("CSV processing error:", error);
+          console.error("Erro no processamento do CSV:", error);
           toast({
             title: "Erro no processamento",
-            description: "Verifique o formato do arquivo e as colunas. " + error.message,
+            description: error.message,
             variant: "destructive",
           });
         } finally {
@@ -157,6 +180,30 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
         </div>
       </div>
 
+      <div className="glass-card p-4">
+        <div className="space-y-4 mb-6">
+          <label className="text-sm font-medium">Campanha Vinculada (Obrigatório)</label>
+          <Select onValueChange={(val) => setSelectedCampaign(val)}>
+            <SelectTrigger className="w-full bg-surface-2 border-border">
+              <SelectValue placeholder="Selecione a campanha antes de subir o arquivo" />
+            </SelectTrigger>
+            <SelectContent>
+              {campaigns && campaigns.length > 0 ? (
+                campaigns
+                  .filter(cap => cap.campaignName && cap.campaignName.trim() !== "")
+                  .map((cap) => (
+                    <SelectItem key={cap.campaignName} value={cap.campaignName}>
+                      {cap.campaignName}
+                    </SelectItem>
+                  ))
+              ) : (
+                <SelectItem value="empty" disabled>Carregando campanhas da Meta...</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {isUploading ? (
         <div className="glass-card p-12 text-center">
           <div className="flex flex-col items-center gap-4">
@@ -166,6 +213,8 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
           </div>
         </div>
       ) : (
+        <div>
+        <h3 className="text-md font-semibold mb-2 mt-6">Etapa 2: Importe seu arquivo</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Facebook Leads Upload */}
           <div className="glass-card p-6 flex flex-col items-center justify-center text-center border-dashed border-2 border-transparent hover:border-primary/50 hover:bg-primary/5 transition-all">
@@ -173,9 +222,9 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
             <h3 className="text-lg font-semibold mb-1">Importar Leads Facebook</h3>
             <p className="text-sm text-muted-foreground mb-4">Use o CSV exportado da sua biblioteca de formulários.</p>
             <input type="file" accept=".csv" ref={facebookInputRef} onChange={(e) => handleFileSelect(e, 'facebook')} className="hidden" />
-            <Button onClick={() => facebookInputRef.current?.click()} disabled={isUploading}>
+            <Button onClick={() => facebookInputRef.current?.click()} disabled={!selectedCampaign || isUploading} className="w-full gap-2">
               <Upload className="w-4 h-4 mr-2" />
-              Selecionar Arquivo
+              {isUploading ? "Processando..." : "Subir Leads da Campanha"}
             </Button>
             <p className="text-xs text-muted-foreground mt-2">Formato esperado: delimitado por tabulação</p>
           </div>
@@ -186,12 +235,13 @@ const CRMUpload = ({ userId, onUploadComplete }: CRMUploadProps) => {
             <h3 className="text-lg font-semibold mb-1">Sincronizar Dados CRM</h3>
             <p className="text-sm text-muted-foreground mb-4">Atualize o status dos leads para a API de Conversão.</p>
             <input type="file" accept=".csv" ref={crmInputRef} onChange={(e) => handleFileSelect(e, 'crm')} className="hidden" />
-            <Button onClick={() => crmInputRef.current?.click()} variant="secondary" disabled={isUploading} className="bg-neon-green/10 hover:bg-neon-green/20 text-neon-green">
+            <Button onClick={() => crmInputRef.current?.click()} variant="secondary" disabled={!selectedCampaign || isUploading} className="bg-neon-green/10 hover:bg-neon-green/20 text-neon-green w-full gap-2">
               <Upload className="w-4 h-4 mr-2" />
-              Selecionar Arquivo
+              {isUploading ? "Processando..." : "Subir Leads da Campanha"}
             </Button>
             <p className="text-xs text-muted-foreground mt-2">Formato esperado: delimitado por vírgula</p>
           </div>
+        </div>
         </div>
       )}
 

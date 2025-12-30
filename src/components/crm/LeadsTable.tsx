@@ -1,124 +1,173 @@
-import { useState, useEffect } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface Lead {
   id: string;
-  nome: string | null;
-  email: string | null;
-  telefone: string | null;
-  empreendimento: string | null;
-  situacao_atendimento: string | null;
-  canal: string | null;
-  cadastro: string | null;
-  atualizacao: string | null;
+  nome: string;
+  email: string;
+  telefone: string;
+  campanha_nome: string | null;
+  situacao_atendimento: string;
+  cadastro: string;
+  fac_id: string | null;
+}
+
+interface CampaignData {
+  campaignName: string;
 }
 
 interface LeadsTableProps {
   userId: string;
-  refreshTrigger?: number;
+  refreshTrigger: number;
+  campaigns: CampaignData[];
 }
 
-const LeadsTable = ({ userId, refreshTrigger }: LeadsTableProps) => {
+const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [campaignFilter, setCampaignFilter] = useState("all");
+  const [originFilter, setOriginFilter] = useState("all");
 
   useEffect(() => {
-    loadLeads();
-  }, [userId, refreshTrigger]);
-
-  const loadLeads = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
+    const fetchLeads = async () => {
+      setLoading(true);
+      let query = supabase
         .from("crm_leads")
-        .select("*")
+        .select("id, nome, email, telefone, campanha_nome, situacao_atendimento, cadastro, fac_id")
         .eq("user_id", userId)
-        .order("cadastro", { ascending: false })
-        .limit(50);
+        .order("cadastro", { ascending: false });
 
-      if (error) throw error;
-      setLeads(data || []);
-    } catch (error) {
-      console.error("Error loading leads:", error);
-    } finally {
+      if (campaignFilter !== "all") {
+        query = query.eq("campanha_nome", campaignFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error fetching leads:", error);
+      } else {
+        setLeads(data as Lead[]);
+      }
       setLoading(false);
-    }
-  };
+    };
 
-  const getSituacaoBadge = (situacao: string | null) => {
-    if (!situacao) return <Badge variant="secondary">-</Badge>;
+    if (userId) {
+      fetchLeads();
+    }
+  }, [userId, refreshTrigger, campaignFilter]);
+
+  const filteredLeads = useMemo(() => {
+    let tempLeads = [...leads];
     
-    const lower = situacao.toLowerCase();
-    if (lower.includes("venda") || lower.includes("fechado")) {
-      return <Badge className="bg-neon-green/20 text-neon-green border-neon-green/30">{situacao}</Badge>;
+    if (originFilter === 'synced') {
+      // Sincronizados: fac_id NÃO começa com "ag:" E nome não é "Sem Nome" e não é vazio.
+      tempLeads = tempLeads.filter(lead => 
+        !lead.fac_id?.startsWith('ag:') && lead.nome && lead.nome !== 'Sem Nome'
+      );
+    } else if (originFilter === 'meta_only') {
+      // Pendentes (Só na Meta): fac_id começa com "ag:" OU nome está "Sem Nome".
+      tempLeads = tempLeads.filter(lead => 
+        lead.fac_id?.startsWith('ag:') || lead.nome === 'Sem Nome'
+      );
     }
-    if (lower.includes("qualificado") || lower.includes("negociação")) {
-      return <Badge className="bg-primary/20 text-primary border-primary/30">{situacao}</Badge>;
-    }
-    if (lower.includes("perdido") || lower.includes("cancelado")) {
-      return <Badge className="bg-destructive/20 text-destructive border-destructive/30">{situacao}</Badge>;
-    }
-    return <Badge variant="secondary">{situacao}</Badge>;
-  };
 
-  if (loading) {
-    return (
-      <div className="glass-card p-8 text-center">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-muted-foreground">Carregando leads...</p>
-      </div>
-    );
-  }
+    if (!searchTerm) return tempLeads;
 
-  if (leads.length === 0) {
-    return (
-      <div className="glass-card p-8 text-center">
-        <p className="text-muted-foreground">Nenhum lead encontrado. Faça upload de um CSV para começar.</p>
-      </div>
+    const lowercasedFilter = searchTerm.toLowerCase();
+    return tempLeads.filter(
+      (lead) =>
+        lead.nome?.toLowerCase().includes(lowercasedFilter) ||
+        lead.email?.toLowerCase().includes(lowercasedFilter) ||
+        lead.telefone?.replace(/\D/g, '').includes(lowercasedFilter)
     );
-  }
+  }, [leads, searchTerm, originFilter]);
 
   return (
-    <div className="glass-card overflow-hidden">
-      <div className="p-4 border-b border-border">
-        <h3 className="font-semibold">Leads Recentes</h3>
-        <p className="text-sm text-muted-foreground">{leads.length} leads encontrados</p>
+    <div className="glass-card p-6">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+        <h2 className="text-xl font-semibold">Leads do CRM</h2>
+        <div className="flex gap-2 w-full md:w-auto">
+          <Input
+            placeholder="Buscar por nome, email, telefone..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full md:w-[250px] bg-surface-2"
+          />
+          <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+            <SelectTrigger className="w-full md:w-[250px] bg-surface-2">
+              <SelectValue placeholder="Filtrar por campanha" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as Campanhas</SelectItem>
+              {(campaigns || []).filter(c => c.campaignName && c.campaignName.trim() !== "").map((c) => (
+                <SelectItem key={c.campaignName} value={c.campaignName}>
+                  {c.campaignName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={originFilter} onValueChange={setOriginFilter}>
+            <SelectTrigger className="w-full md:w-[200px] bg-surface-2">
+              <SelectValue placeholder="Filtrar por origem" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="synced">Sincronizados</SelectItem>
+              <SelectItem value="meta_only">Apenas na Meta</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Nome</TableHead>
-              <TableHead className="text-muted-foreground">Email</TableHead>
-              <TableHead className="text-muted-foreground">Empreendimento</TableHead>
-              <TableHead className="text-muted-foreground">Status</TableHead>
-              <TableHead className="text-muted-foreground">Canal</TableHead>
-              <TableHead className="text-muted-foreground">Cadastro</TableHead>
+            <TableRow>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Contato</TableHead>
+              <TableHead>Campanha</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Data de Cadastro</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead, index) => (
-              <TableRow
-                key={lead.id}
-                className="border-border hover:bg-muted/50 transition-colors animate-fade-in"
-                style={{ animationDelay: `${index * 30}ms` }}
-              >
-                <TableCell className="font-medium">{lead.nome || "-"}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{lead.email || "-"}</TableCell>
-                <TableCell className="text-sm">{lead.empreendimento || "-"}</TableCell>
-                <TableCell>{getSituacaoBadge(lead.situacao_atendimento)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{lead.canal || "-"}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {lead.cadastro
-                    ? format(new Date(lead.cadastro), "dd/MM/yyyy", { locale: ptBR })
-                    : "-"}
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-10">
+                  <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filteredLeads.length > 0 ? (
+              filteredLeads.map((lead) => (
+                <TableRow key={lead.id}>
+                  <TableCell className="font-medium">{lead.nome || "Não informado"}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span>{lead.email}</span>
+                      <span className="text-xs text-muted-foreground">{lead.telefone?.replace('p:+', '')}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{lead.campanha_nome}</TableCell>
+                  <TableCell>{lead.situacao_atendimento}</TableCell>
+                  <TableCell>
+                    {lead.cadastro
+                      ? format(new Date(lead.cadastro), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                      : "-"}
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-10">
+                  Nenhum lead encontrado.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

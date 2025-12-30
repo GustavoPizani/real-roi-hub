@@ -33,6 +33,11 @@
     totalLeads: number;
   }
 
+  interface LeadCostInsight {
+    cost: number;
+    timestamp: string;
+  }
+
   interface KPIs {
     investido: number;
     resultado: number;
@@ -43,6 +48,10 @@
   interface DashboardData {
     temporalData: TemporalDataPoint[];
     channelsData: { name: string; value: number }[];
+    leadCostInsights?: {
+      cheapest: LeadCostInsight | null;
+      mostExpensive: LeadCostInsight | null;
+    };
     campaignData: CampaignData[];
     adsData: AdData[];
     kpis: KPIs;
@@ -72,6 +81,7 @@
     const [data, setData] = useState<DashboardData>({
       temporalData: [],
       channelsData: [],
+      leadCostInsights: { cheapest: null, mostExpensive: null },
       campaignData: [],
       adsData: [],
       kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
@@ -126,9 +136,10 @@
       const totalLeads = leads?.length || 0;
 
       // Count "Venda" status as sales
-      const sales = leads?.filter((lead) =>
-        lead.situacao_atendimento?.toLowerCase().includes("venda")
-      ).length || 0;
+      const sales = leads?.filter((lead) => {
+        const status = lead.situacao_atendimento?.toLowerCase() || '';
+        return status.includes("venda") || status.includes("purchase");
+      }).length || 0;
 
       // Estimate average ticket (can be configured later)
       const avgTicket = 350000; // R$ 350k average real estate sale
@@ -144,12 +155,12 @@
           let formattedDate: string;
 
           if (isSingleDay) {
-            formattedDate = format(leadDate, 'HH:00'); // Group by hour for single day view
+            // Para visão de HOJE: Garante o formato HH:00
+            formattedDate = `${leadDate.getHours().toString().padStart(2, '0')}:00`;
           } else {
-            // Handles ISO string (YYYY-MM-DDTHH:mm:ss.sssZ) by taking only the date part
-            const dateStr = lead.cadastro.split('T')[0];
-            const [_, month, day] = dateStr.split('-');
-            formattedDate = `${day}/${month}`;
+            const datePart = lead.cadastro.split('T')[0];
+            const [y, m, d] = datePart.split('-');
+            formattedDate = `${d}/${m}`;
           }
           leadsByDateMap.set(formattedDate, (leadsByDateMap.get(formattedDate) || 0) + 1);
         }
@@ -252,6 +263,31 @@
       }
     }, [dateRange]);
 
+    // ADICIONE ESTE BLOCO PARA O SCAN DE DIAGNÓSTICO
+    const settingsDiagnostic = async () => {
+      console.log("=== SCAN DE DIAGNÓSTICO DE APIS ===");
+      const { data: rawData, error } = await supabase.from("api_settings").select("*");
+      
+      if (error) {
+        console.error("DEBUG: Erro ao acessar a tabela api_settings:", error.message);
+        return;
+      }
+
+      console.log(`DEBUG: Total de chaves encontradas no banco: ${rawData?.length}`);
+      
+      rawData?.forEach(item => {
+        try {
+          const decrypted = decrypt(item.encrypted_value);
+          console.log(`DEBUG: Chave [${item.setting_key}] encontrada. Status: ${decrypted ? "Descriptografada com Sucesso" : "FALHA NA DESCRIPTOGRAFIA"}`);
+        } catch (e) {
+          console.error(`DEBUG: Erro crítico ao tentar ler a chave ${item.setting_key}`);
+        }
+      });
+    };
+
+    // Chame a função dentro do useEffect para rodar o scan assim que o dashboard carregar
+    useEffect(() => { settingsDiagnostic(); }, [userId]);
+
     useEffect(() => {
       const loadDashboardData = async () => {
         if (!userId) {
@@ -272,12 +308,14 @@
           const adAccountIds = settings?.META_AD_ACCOUNT_IDS?.split(",").filter(Boolean) || [];
 
           // If Meta API is not configured or failed, we can still show CRM data
+          // VALIDAÇÃO CRUCIAL: Se não houver token, não dispara a Edge Function (evita erro 400)
           if (!accessToken || adAccountIds.length === 0) {
+            console.warn("Credenciais Meta não encontradas. Exibindo apenas dados do CRM.");
             setData((prev) => ({
               ...prev,
               isUsingMockData: true,
               isLoading: false,
-              error: "Configure suas APIs Meta para ver métricas de investimento, CPR e ROI.",
+              error: "Configure suas APIs Meta para ver métricas de investimento.",
               kpis: {
                 investido: 0,
                 resultado: crmData.totalLeads, // Show real leads from CRM
@@ -292,47 +330,65 @@
             return;
           }
 
-          const metaData = await fetchMetaData(accessToken, adAccountIds);
-
-          if (!metaData) {
-            let errorMessage = "Erro ao buscar dados da Meta. Verifique suas credenciais.";
-            if (metaData && metaData.error) {
-              errorMessage += ` Detalhes: ${metaData.error}`;
-            }
-            throw new Error(errorMessage);
-
-
+          // Dentro de loadDashboardData, envolva a chamada fetchMetaData em um try/catch específico
+          let metaData = null;
+          try {
+              metaData = await fetchMetaData(accessToken, adAccountIds);
+          } catch (metaErr) {
+              console.error("Falha específica na Meta API, prosseguindo apenas com CRM:", metaErr);
           }
 
-          // Calculate realLeads per ad by cross-referencing with CRM data from the period
-          const leadsByAdMap = new Map<string, number>();
-          crmData.allLeads?.forEach(lead => {
-            if (lead.fac_id) {
-              leadsByAdMap.set(lead.fac_id, (leadsByAdMap.get(lead.fac_id) || 0) + 1);
-            }
-          });
-          
-          const adsWithRealLeads = metaData.adsData.map((ad: AdData) => ({
-            ...ad,
-            realLeads: leadsByAdMap.get(ad.id) || 0,
-          }));
+          // Se metaData for null, o sistema deve continuar usando crmData para não ficar zerado
+          if (!metaData) {
+            const totalLeadsFromCRM = crmData.totalLeads;
+            setData({
+              temporalData: crmData.leadsByDate.map(item => ({ date: item.date, investimento: 0, leads: item.leads })),
+              channelsData: [],
+              campaignData: [],
+              adsData: [],
+              kpis: {
+                investido: 0,
+                resultado: totalLeadsFromCRM,
+                custoPorResultado: 0,
+                roiReal: 0,
+              },
+              isUsingMockData: true, // Indicates that we are not showing full data
+              isLoading: false,
+              error: "Falha ao buscar dados da Meta. Exibindo apenas dados do CRM.",
+            });
+            return;
+          }
 
           // Group ads by campaign
+          // Localize o agrupamento dentro de loadDashboardData
           const campaigns: Record<string, CampaignData> = {};
-          adsWithRealLeads.forEach((ad: AdData) => {
+
+          // Use metaData.adsData DIRETAMENTE para garantir que vem da Meta
+          metaData.adsData.forEach((ad: AdData) => {
             const campaignName = ad.campaignName || 'Sem Campanha';
+            
             if (!campaigns[campaignName]) {
-              campaigns[campaignName] = { campaignName, ads: [], totalSpend: 0, totalLeads: 0 };
+              campaigns[campaignName] = { 
+                campaignName, 
+                ads: [], 
+                totalSpend: 0, 
+                totalLeads: 0 
+              };
             }
-            campaigns[campaignName].ads.push(ad);
+
+            // Criamos o objeto do anúncio usando 'conversions' da Meta para 'realLeads' e 'totalLeads'
+            const adWithMetaLeads = {
+              ...ad,
+              realLeads: ad.conversions || 0,
+              conversions: ad.conversions || 0
+            };
+
+            campaigns[campaignName].ads.push(adWithMetaLeads);
             campaigns[campaignName].totalSpend += ad.spend;
-            campaigns[campaignName].totalLeads += ad.realLeads || 0;
+            campaigns[campaignName].totalLeads += ad.conversions || 0; // Soma leads da Meta
           });
 
           const investment = metaData.kpis.investido;
-          const totalLeadsFromCRM = crmData.totalLeads;
-          
-          const custoPorResultado = totalLeadsFromCRM > 0 ? investment / totalLeadsFromCRM : 0;
 
           const roiReal = investment > 0 
             ? ((crmData.totalRevenue - investment) / investment) * 100 
@@ -369,26 +425,44 @@
               };
             });
 
-          // Merge temporal data from Meta (investment) and CRM (leads)
+          // Identifica Lead Mais Caro e Mais Barato
+          let mostExpensive: (typeof processedLeads)[0] | null = null;
+          let cheapest: (typeof processedLeads)[0] | null = null;
+
+          if (processedLeads.length > 0) {
+            mostExpensive = processedLeads.reduce((prev, curr) => 
+              (prev.individualCost > curr.individualCost) ? prev : curr
+            );
+
+            const positiveCostLeads = processedLeads.filter(l => l.individualCost > 0);
+            if (positiveCostLeads.length > 0) {
+              cheapest = positiveCostLeads.reduce((prev, curr) => 
+                (prev.individualCost < curr.individualCost) ? prev : curr
+              );
+            }
+          }
+
+          // No final do loadDashboardData, ajuste o merge do temporalMap
           const temporalMap = new Map<string, { investimento: number; leads: number }>();
+          // Prioridade para os dados da Meta
           metaData.temporalData.forEach(item => {
-            temporalMap.set(item.date, { investimento: item.investimento, leads: 0 });
-          });
-          crmData.leadsByDate.forEach(item => {
-            const existing = temporalMap.get(item.date) || { investimento: 0, leads: 0 };
-            temporalMap.set(item.date, { investimento: existing.investimento, leads: (existing.leads || 0) + item.leads });
+            temporalMap.set(item.date, { investimento: item.investimento, leads: item.leads });
           });
           const finalTemporalData = Array.from(temporalMap.entries()).map(([date, values]) => ({ date, ...values })).sort((a, b) => a.date.localeCompare(b.date));
 
           setData({
             temporalData: finalTemporalData,
             channelsData: metaData.channelsData || [],
+            leadCostInsights: {
+              cheapest: cheapest ? { cost: cheapest.individualCost, timestamp: cheapest.cadastro } : null,
+              mostExpensive: mostExpensive ? { cost: mostExpensive.individualCost, timestamp: mostExpensive.cadastro } : null,
+            },
             campaignData: Object.values(campaigns),
-            adsData: adsWithRealLeads,
+            adsData: Object.values(campaigns).flatMap(c => c.ads),
             kpis: {
               investido: investment,
-              resultado: totalLeadsFromCRM,
-              custoPorResultado: custoPorResultado,
+              resultado: metaData.kpis.resultado,
+              custoPorResultado: metaData.kpis.custoPorResultado,
               roiReal: roiReal,
             },
             isUsingMockData: false,
