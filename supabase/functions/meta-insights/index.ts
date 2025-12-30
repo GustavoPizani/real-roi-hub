@@ -1,3 +1,5 @@
+// @ts-nocheck - This file runs in Deno environment
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -105,10 +107,11 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
-  } catch (error) {
-    console.error("[ERRO INSIGHTS]:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("[ERRO INSIGHTS]:", errorMessage);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

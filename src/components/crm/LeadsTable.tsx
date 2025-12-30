@@ -3,17 +3,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface Lead {
   id: string;
-  nome: string;
-  email: string;
-  telefone: string;
+  nome: string | null;
+  email: string | null;
+  telefone: string | null;
   campanha_nome: string | null;
-  situacao_atendimento: string;
-  cadastro: string;
+  situacao_atendimento: string | null;
+  cadastro: string | null;
   fac_id: string | null;
 }
 
@@ -27,12 +29,15 @@ interface LeadsTableProps {
   campaigns: CampaignData[];
 }
 
+const ROWS_PER_PAGE = 10;
+
 const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [campaignFilter, setCampaignFilter] = useState("all");
   const [originFilter, setOriginFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const fetchLeads = async () => {
@@ -62,6 +67,11 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
     }
   }, [userId, refreshTrigger, campaignFilter]);
 
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, campaignFilter, originFilter]);
+
   const filteredLeads = useMemo(() => {
     let tempLeads = [...leads];
     
@@ -87,6 +97,12 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
         lead.telefone?.replace(/\D/g, '').includes(lowercasedFilter)
     );
   }, [leads, searchTerm, originFilter]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredLeads.length / ROWS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+  const endIndex = startIndex + ROWS_PER_PAGE;
+  const paginatedLeads = filteredLeads.slice(startIndex, endIndex);
 
   return (
     <div className="glass-card p-6">
@@ -142,8 +158,8 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
                   <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ) : filteredLeads.length > 0 ? (
-              filteredLeads.map((lead) => (
+            ) : paginatedLeads.length > 0 ? (
+              paginatedLeads.map((lead) => (
                 <TableRow key={lead.id}>
                   <TableCell className="font-medium">{lead.nome || "Não informado"}</TableCell>
                   <TableCell>
@@ -171,6 +187,40 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Pagination Controls */}
+      {!loading && filteredLeads.length > 0 && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+          <p className="text-sm text-muted-foreground">
+            Mostrando {startIndex + 1} a {Math.min(endIndex, filteredLeads.length)} de {filteredLeads.length} leads
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="gap-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Anterior
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              Página {currentPage} de {totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage >= totalPages}
+              className="gap-1"
+            >
+              Próximo
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

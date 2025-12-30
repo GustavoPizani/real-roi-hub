@@ -49,12 +49,13 @@ const formatAndScanLead = (row: any, campaignName: string, userId: string) => {
   };
 };
 
+// Função de mapeamento de status para o CRM -> Meta CAPI
 const mapStatus = (status: string): string => {
   const lowerStatus = status?.toLowerCase() || '';
-  if (lowerStatus.includes('interessado')) return 'Lead';
-  if (lowerStatus.includes('venda')) return 'Purchase';
-  if (lowerStatus.includes('visita')) return 'Schedule';
-  return status;
+  if (lowerStatus.includes('interessado')) return 'Interessado';
+  if (lowerStatus.includes('venda')) return 'Venda';
+  if (lowerStatus.includes('visita')) return 'Visita';
+  return status || 'Novo';
 };
 
 const CRMUpload = ({ userId, onUploadComplete, campaigns }: CRMUploadProps) => {
@@ -99,45 +100,41 @@ const CRMUpload = ({ userId, onUploadComplete, campaigns }: CRMUploadProps) => {
             console.log("Total Processado:", leadsParaSalvar.length);
             if (leadsParaSalvar.length > 0) console.log("Exemplo de Lead:", leadsParaSalvar[0]);
 
-            const { error } = await supabase
+            // LOGICA: ignoreDuplicates: true garante que leads antigos NÃO sejam tocados
+            const { error: fbError } = await supabase
               .from('crm_leads')
-              .upsert(leadsParaSalvar, { onConflict: 'user_id,email' });
+              .upsert(leadsParaSalvar, { 
+                onConflict: 'user_id,email',
+                ignoreDuplicates: true 
+              });
 
-            if (error) throw error;
+            if (fbError) throw fbError;
 
-            toast({ title: "Sucesso!", description: `${leadsParaSalvar.length} leads do Facebook importados.` });
+            toast({ title: "Sucesso!", description: `${leadsParaSalvar.length} novos leads importados. Leads já existentes foram preservados.` });
             onUploadComplete();
           } else {
-            // 1. Ler os dados do CSV do CRM (normalmente delimitado por vírgula)
+            // FLUXO CRM: Sincronização de Status apenas
             const crmRows = results.data as any[];
             
-            // 2. Preparar os dados para o Cruzamento
+            // Preparar dados para sincronização - apenas email, user_id e status
             const leadsParaSincronizar = crmRows.map(row => {
-              // Limpeza de telefone igual a do Facebook para garantir o "Match"
-              const rawPhone = row.telefone || row.Telefone || "";
-              let cleanPhone = rawPhone.toString().replace(/\D/g, '');
-              if (cleanPhone.length === 11 || cleanPhone.length === 10) cleanPhone = `55${cleanPhone}`;
-
               return {
                 user_id: userId,
                 email: row.email || row.Email,
-                telefone: cleanPhone,
-                nome: row.nome || row.Nome,
-                situacao_atendimento: row.situacao_atendimento || row.Status || 'Novo',
-                campanha_nome: selectedCampaign, // Vincula à campanha selecionada no Select
-                origem_importacao: 'crm_manual'
+                // Mapeamos o status convertido
+                situacao_atendimento: mapStatus(row.situacao_atendimento || row.Status || 'Novo'),
               };
-            }).filter(lead => lead.email || lead.telefone);
+            }).filter(lead => lead.email);
 
-            // 3. Executar o Upsert (Ele vai encontrar o lead pelo email e atualizar o status)
-            const { error } = await supabase
+            // LOGICA: ignoreDuplicates: false para atualizar status existentes
+            const { error: crmError } = await supabase
               .from('crm_leads')
               .upsert(leadsParaSincronizar, { 
-                onConflict: 'user_id,email', // Se o e-mail for igual, ele atualiza
+                onConflict: 'user_id,email',
                 ignoreDuplicates: false 
               });
 
-            if (error) throw error;
+            if (crmError) throw crmError;
 
             toast({ 
               title: "Sincronização Concluída", 

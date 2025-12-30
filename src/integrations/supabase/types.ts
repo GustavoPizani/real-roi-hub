@@ -123,6 +123,7 @@ export type Database = {
         Row: {
           atualizacao: string | null
           cadastro: string | null
+          campanha_nome: string | null
           canal: string | null
           corretor: string | null
           created_at: string
@@ -139,6 +140,7 @@ export type Database = {
         Insert: {
           atualizacao?: string | null
           cadastro?: string | null
+          campanha_nome?: string | null
           canal?: string | null
           corretor?: string | null
           created_at?: string
@@ -155,6 +157,7 @@ export type Database = {
         Update: {
           atualizacao?: string | null
           cadastro?: string | null
+          campanha_nome?: string | null
           canal?: string | null
           corretor?: string | null
           created_at?: string
