@@ -1,4 +1,4 @@
-
+// @ts-nocheck - This file runs in Deno environment
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import CryptoJS from "https://esm.sh/crypto-js@4.2.0";
 
@@ -17,8 +17,9 @@ const decrypt = (ciphertext: string, key: string): string => {
       throw new Error("Decryption resulted in an empty string.");
     }
     return decrypted;
-  } catch (e) {
-    console.error("Decryption failed:", e.message);
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+    console.error("Decryption failed:", errorMessage);
     return "";
   }
 };
@@ -130,11 +131,12 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
-    } catch (error) {
-      console.error("ERRO CRÍTICO:", error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error("ERRO CRÍTICO:", errorMessage);
       // Retornamos 200 mesmo em erro de lógica para evitar que a Meta 
       // tente reenviar o mesmo erro repetidamente (Flood)
-      return new Response(JSON.stringify({ error: error.message }), { 
+      return new Response(JSON.stringify({ error: errorMessage }), { 
         status: 200, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       })
