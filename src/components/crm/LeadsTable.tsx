@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { format } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Lead {
   id: string;
@@ -17,6 +18,7 @@ interface Lead {
   situacao_atendimento: string | null;
   cadastro: string | null;
   fac_id: string | null;
+  ultima_atualizacao: string | null;
 }
 
 interface CampaignData {
@@ -29,7 +31,35 @@ interface LeadsTableProps {
   campaigns: CampaignData[];
 }
 
-const ROWS_PER_PAGE = 10;
+const getStatusBadgeVariant = (status: string | null): string => {
+  const s = status?.toLowerCase() || 'lead';
+  if (s.includes('purchase')) return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+  if (s.includes('submitapplication')) return 'bg-primary/20 text-primary border-primary/30';
+  if (s.includes('schedule')) return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+  if (s.includes('contact')) return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+  return 'bg-muted text-muted-foreground border-muted-foreground/30';
+};
+
+const StatusBadge = ({ status }: { status: string | null }) => (
+  <Badge 
+    variant="outline" 
+    className={`font-normal ${getStatusBadgeVariant(status)}`}
+  >
+    {status || 'Lead'}
+  </Badge>
+);
+
+const formatRelativeDate = (dateString: string | null): string => {
+  if (!dateString) return "-";
+  try {
+    const date = new Date(dateString);
+    if (isToday(date)) return `Hoje às ${format(date, 'HH:mm')}`;
+    if (isYesterday(date)) return 'Ontem';
+    return format(date, 'dd/MM/yyyy');
+  } catch (e) {
+    return "-";
+  }
+};
 
 const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -37,14 +67,17 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [campaignFilter, setCampaignFilter] = useState("all");
   const [originFilter, setOriginFilter] = useState("all");
+  
+  // PAGINAÇÃO DINÂMICA
   const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10); 
 
   useEffect(() => {
     const fetchLeads = async () => {
       setLoading(true);
       let query = supabase
         .from("crm_leads")
-        .select("id, nome, email, telefone, campanha_nome, situacao_atendimento, cadastro, fac_id")
+        .select("id, nome, email, telefone, campanha_nome, situacao_atendimento, cadastro, fac_id, ultima_atualizacao")
         .eq("user_id", userId)
         .order("cadastro", { ascending: false });
 
@@ -67,21 +100,19 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
     }
   }, [userId, refreshTrigger, campaignFilter]);
 
-  // Reset page when filters change
+  // Resetar página quando filtros ou quantidade de linhas mudarem
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, campaignFilter, originFilter]);
+  }, [searchTerm, campaignFilter, originFilter, rowsPerPage]);
 
   const filteredLeads = useMemo(() => {
     let tempLeads = [...leads];
     
     if (originFilter === 'synced') {
-      // Sincronizados: fac_id NÃO começa com "ag:" E nome não é "Sem Nome" e não é vazio.
       tempLeads = tempLeads.filter(lead => 
         !lead.fac_id?.startsWith('ag:') && lead.nome && lead.nome !== 'Sem Nome'
       );
     } else if (originFilter === 'meta_only') {
-      // Pendentes (Só na Meta): fac_id começa com "ag:" OU nome está "Sem Nome".
       tempLeads = tempLeads.filter(lead => 
         lead.fac_id?.startsWith('ag:') || lead.nome === 'Sem Nome'
       );
@@ -98,11 +129,12 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
     );
   }, [leads, searchTerm, originFilter]);
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredLeads.length / ROWS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
-  const endIndex = startIndex + ROWS_PER_PAGE;
-  const paginatedLeads = filteredLeads.slice(startIndex, endIndex);
+  // CÁLCULOS DE PAGINAÇÃO
+  const totalPages = Math.ceil(filteredLeads.length / rowsPerPage);
+  const currentLeads = filteredLeads.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
 
   return (
     <div className="glass-card p-6">
@@ -140,6 +172,7 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
           </Select>
         </div>
       </div>
+
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -149,6 +182,7 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
               <TableHead>Campanha</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Data de Cadastro</TableHead>
+              <TableHead>Última Att.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,28 +192,35 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
                   <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ) : paginatedLeads.length > 0 ? (
-              paginatedLeads.map((lead) => (
-                <TableRow key={lead.id}>
+            ) : currentLeads.length > 0 ? (
+              currentLeads.map((lead) => (
+                <TableRow key={lead.id} className="hover:bg-white/5 transition-colors">
                   <TableCell className="font-medium">{lead.nome || "Não informado"}</TableCell>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span>{lead.email}</span>
+                      <span className="text-sm">{lead.email}</span>
                       <span className="text-xs text-muted-foreground">{lead.telefone?.replace('p:+', '')}</span>
                     </div>
                   </TableCell>
-                  <TableCell>{lead.campanha_nome}</TableCell>
-                  <TableCell>{lead.situacao_atendimento}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-sm">{lead.campanha_nome}</TableCell>
+                  <TableCell><StatusBadge status={lead.situacao_atendimento} /></TableCell>
+                  <TableCell className="text-sm">
                     {lead.cadastro
                       ? format(new Date(lead.cadastro), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
                       : "-"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {lead.ultima_atualizacao ? (
+                      <span className={isToday(new Date(lead.ultima_atualizacao)) ? "text-emerald-400 font-medium" : "text-muted-foreground"}>
+                        {formatRelativeDate(lead.ultima_atualizacao)}
+                      </span>
+                    ) : "-"}
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-10">
+                <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                   Nenhum lead encontrado.
                 </TableCell>
               </TableRow>
@@ -188,39 +229,60 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
         </Table>
       </div>
 
-      {/* Pagination Controls */}
-      {!loading && filteredLeads.length > 0 && (
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            Mostrando {startIndex + 1} a {Math.min(endIndex, filteredLeads.length)} de {filteredLeads.length} leads
-          </p>
+      {/* RODAPÉ COM PAGINAÇÃO E CONTROLE DE LINHAS */}
+      <div className="flex flex-col sm:flex-row items-center justify-between px-2 py-4 border-t border-border gap-4">
+        <div className="flex items-center gap-4">
+          {!loading && (
+            <p className="text-sm text-muted-foreground whitespace-nowrap">
+              Mostrando {currentLeads.length} de {filteredLeads.length} leads
+            </p>
+          )}
+          
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="gap-1"
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Linhas:</span>
+            <Select 
+              value={rowsPerPage.toString()} 
+              onValueChange={(val) => setRowsPerPage(Number(val))}
             >
-              <ChevronLeft className="w-4 h-4" />
-              Anterior
-            </Button>
-            <span className="text-sm text-muted-foreground px-2">
-              Página {currentPage} de {totalPages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage >= totalPages}
-              className="gap-1"
-            >
-              Próximo
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+              <SelectTrigger className="h-8 w-[70px] bg-surface-2 text-xs">
+                <SelectValue placeholder={rowsPerPage} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="15">15</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-      )}
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1 || loading}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          
+          <div className="flex items-center px-4 text-sm font-medium">
+            Página {currentPage} de {totalPages || 1}
+          </div>
+          
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages || loading || totalPages === 0}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
