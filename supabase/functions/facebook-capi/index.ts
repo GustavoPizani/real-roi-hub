@@ -100,10 +100,9 @@ serve(async (req) => {
 
     return new Response(JSON.stringify(result), { status: 200 });
 
-  } catch (err: unknown) {
+  } catch (err) {
     // SCAN DE ERRO CRÍTICO: Captura falhas de código ou rede
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    console.error("ERRO DURANTE EXECUÇÃO:", errorMessage);
-    return new Response(errorMessage, { status: 500 });
+    console.error("ERRO DURANTE EXECUÇÃO:", err.message);
+    return new Response(err.message, { status: 500 });
   }
 });
