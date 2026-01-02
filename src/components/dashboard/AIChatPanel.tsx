@@ -13,10 +13,11 @@ interface Message {
 
 interface AIChatPanelProps {
   onClose: () => void;
+  user: any; // Pass the user object to get the ID
   dashboardContext?: string;
 }
 
-const AIChatPanel = ({ onClose, dashboardContext }: AIChatPanelProps) => {
+const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -47,6 +48,7 @@ const AIChatPanel = ({ onClose, dashboardContext }: AIChatPanelProps) => {
         body: {
           messages: [...messages, { role: "user", content: userMessage }],
           context: dashboardContext,
+          userId: user?.id // Importante enviar o ID para a busca no banco
         },
       });
 

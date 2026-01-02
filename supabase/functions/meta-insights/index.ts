@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     const date_preset = !time_range ? 'last_30d' : undefined;
 
     // 4. Busca de KPIs Principais
-    const insightsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/insights`;
+    const insightsUrl = `https://graph.facebook.com/v22.0/act_${adAccountId}/insights`;
     const insightsParams = new URLSearchParams({
       access_token: accessToken,
       fields: "spend,impressions,clicks,actions",
@@ -46,20 +46,23 @@ Deno.serve(async (req) => {
 
     if (insightsData.error) throw new Error(insightsData.error.message);
 
-    // 5. Busca de Anúncios e Campanhas (Requisito: Mapeamento por Campanha)
-    const adsUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/ads`;
-    const adsParams = new URLSearchParams({
+    // 5. Busca por Campanha (Essencial para o match com CRM)
+    // Usar o level: 'campaign' garante que o nome da campanha venha pronto para o Dashboard
+    const campaignInsightsUrl = `https://graph.facebook.com/v22.0/act_${adAccountId}/insights`;
+    const campaignParams = new URLSearchParams({
       access_token: accessToken,
-      fields: "id,name,campaign{id,name},creative{thumbnail_url},insights{spend,impressions,clicks,actions}",
-      limit: "100",
+      fields: "campaign_name,campaign_id,spend,actions",
+      level: "campaign",
+      limit: "500",
     });
-    if (time_range) adsParams.append('time_range', time_range);
-    if (date_preset) adsParams.append('date_preset', date_preset);
+    if (time_range) campaignParams.append('time_range', time_range);
 
-    const adsRes = await fetch(`${adsUrl}?${adsParams}`);
-    const adsData = await adsRes.json();
+    const campRes = await fetch(`${campaignInsightsUrl}?${campaignParams}`);
+    const campData = await campRes.json();
 
-    // 6. Busca de Canais (Requisito: Remover dispositivos e usar publisher_platform)
+    if (campData.error) throw new Error(campData.error.message);
+
+    // 6. Busca de Canais
     const channelParams = new URLSearchParams({
       access_token: accessToken,
       fields: "impressions,spend",
@@ -76,17 +79,14 @@ Deno.serve(async (req) => {
     const accountInsight = insightsData.data?.[0] || {};
     const leadAction = (accountInsight.actions || []).find((a: any) => a.action_type === "lead");
     
-    const adsProcessed = (adsData.data || []).map((ad: any) => {
-      const insight = ad.insights?.data?.[0] || {};
-      const adLeads = (insight.actions || []).find((a: any) => a.action_type === "lead")?.value || 0;
+    // Processamento focado em campanhas para o campaignsMap
+    const adsProcessed = (campData.data || []).map((camp: any) => {
+      const campLeads = (camp.actions || []).find((a: any) => a.action_type === "lead")?.value || 0;
       return {
-        id: ad.id,
-        name: ad.name,
-        campaignId: ad.campaign?.id,
-        campaignName: ad.campaign?.name,
-        thumbnail_url: ad.creative?.thumbnail_url,
-        spend: parseFloat(insight.spend || "0"),
-        conversions: parseInt(adLeads),
+        campaignId: camp.campaign_id,
+        campaignName: camp.campaign_name, // Nome que o Dashboard usará para o match
+        spend: parseFloat(camp.spend || "0"),
+        conversions: parseInt(campLeads),
       };
     });
 
@@ -110,6 +110,14 @@ Deno.serve(async (req) => {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error("[ERRO INSIGHTS]:", errorMessage);
+
+    // Adicione dentro do catch (error: unknown)
+    if (errorMessage.includes("OAuth") || errorMessage.includes("access token")) {
+      return new Response(
+        JSON.stringify({ error: "TOKEN_INVALIDO", detail: errorMessage }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
