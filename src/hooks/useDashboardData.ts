@@ -54,20 +54,30 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
   const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
     const since = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
     const until = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
-    const promises = adAccountIds.map((id) =>
-      supabase.functions.invoke("meta-insights", { body: { accessToken, adAccountId: id.trim(), since, until } })
+    const results = await Promise.all(
+      adAccountIds.map(async (id) => {
+        try {
+          const { data, error } = await supabase.functions.invoke("meta-insights", {
+            body: { accessToken, adAccountId: id.trim(), since, until },
+          });
+          if (error) throw error;
+          return data;
+        } catch (e) {
+          console.error(`Erro ao buscar dados da conta ${id.trim()}:`, e);
+          return null;
+        }
+      })
     );
-    const results = await Promise.all(promises);
-    
+
     const ads: any[] = [];
     let totalSpent = 0;
     const channels: any[] = [];
 
     results.forEach(res => {
-      if (res.data) {
-        ads.push(...(res.data.adsData || []));
-        totalSpent += res.data.kpis?.investido || 0;
-        if (res.data.channelsData) channels.push(...res.data.channelsData);
+      if (res) {
+        ads.push(...(res.adsData || []));
+        totalSpent += res.kpis?.investido || 0;
+        if (res.channelsData) channels.push(...res.channelsData);
       }
     });
     return { ads, totalSpent, channels };
@@ -92,7 +102,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
         console.log("Token extraído:", accessToken ? "OK" : "VAZIO");
         console.log("Contas extraídas:", adAccountIdsRaw || "VAZIO");
 
-        const adAccountIds = adAccountIdsRaw?.split(",").filter(Boolean) || [];
+        const adAccountIds = adAccountIdsRaw?.split(",").map(id => id.trim()).filter(Boolean) || [];
 
         let metaInfo = { ads: [], totalSpent: 0, channels: [] };
         if (accessToken && adAccountIds.length > 0) {
