@@ -28,7 +28,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
     waterfallData: [],
     campaignPerformance: [],
     adsData: [],
-    kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
+    kpis: { investido: 0, totalLeadsCRM: 0, totalLeadsMeta: 0, cplReal: 0, cplMeta: 0, roiReal: 0 },
     isUsingMockData: true,
     isLoading: true,
     error: null,
@@ -85,6 +85,21 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
 
   useEffect(() => {
     const loadDashboardData = async () => {
+      // Adicionado para evitar chamadas de API se o usuário estiver deslogado ou saindo.
+      if (!userId) {
+        setData({
+          isUsingMockData: true,
+          isLoading: false,
+          error: "Aguardando autenticação do usuário.",
+          kpis: { investido: 0, totalLeadsCRM: 0, totalLeadsMeta: 0, cplReal: 0, cplMeta: 0, roiReal: 0 },
+          campaignPerformance: [],
+          waterfallData: [],
+          channelsData: [],
+          adsData: [],
+        });
+        return;
+      }
+
       setData(prev => ({ ...prev, isLoading: true }));
 
       try {
@@ -120,9 +135,23 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           l.situacao_atendimento?.toLowerCase().includes('venda')
         ).length || 0;
 
+        // NOVO: Leads da Meta API
+        const totalLeadsMeta = metaInfo.ads.reduce((sum, ad) => sum + (parseInt(ad.conversions || '0', 10)), 0);
+
         // --- 2. FUNIL WATERFALL (Sincronizado com CRM) ---
         const waterfallData: WaterfallData[] = [
-          { name: 'LEADS GERADOS (CRM)', value: totalLeadsCRM, percentage: 100, color: 'bg-gradient-to-r from-[#f90f54] to-[#8735d2]' },
+          { 
+            name: 'LEADS META (API)', 
+            value: totalLeadsMeta, 
+            percentage: 100, 
+            color: 'bg-blue-600' 
+          },
+          { 
+            name: 'LEADS CRM (REAL)', 
+            value: totalLeadsCRM,
+            percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsMeta) * 100 : 0,
+            color: 'bg-gradient-to-r from-[#f90f54] to-[#8735d2]' 
+          },
           { 
             name: 'VISITAS AGENDADAS', 
             value: totalVisitsCRM,
@@ -130,37 +159,43 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
             color: 'bg-[#0088FE]'
           },
           { 
-            name: 'VENDAS CONCRETIZADAS', 
+            name: 'VENDAS', 
             value: totalSalesCRM,
             percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0,
             color: 'bg-[#00C49F]'
           }
         ];
 
-        // --- 3. PERFORMANCE POR PROJETO (UNIFICAÇÃO) ---
+        // --- 3. PERFORMANCE POR PROJETO (UNIFICAÇÃO TOTAL) ---
         const campaignsMap: Record<string, any> = {};
 
-        // Inicia com dados da Meta (Investimento)
+        // Função auxiliar para normalizar nomes e evitar duplicidade por erro de digitação
+        const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
+
+        // Passo A: Mapeia dados de Investimento da Meta
         metaInfo.ads.forEach(ad => {
-          const name = (ad.campaignName || "Sem Campanha").toUpperCase().trim();
+          const name = normalize(ad.campaignName);
           if (!campaignsMap[name]) {
-            campaignsMap[name] = { name, spent: 0, leads: 0, qualified: 0, sales: 0 };
+            campaignsMap[name] = { name, spent: 0, leads: 0, leadsMeta: 0, qualified: 0, sales: 0 };
           }
           campaignsMap[name].spent += ad.spend;
+          campaignsMap[name].leadsMeta += parseInt(ad.conversions || '0', 10);
         });
 
-        // Soma dados do CRM por Campanha
+        // Passo B: Agrega dados do CRM (Mesmo que a campanha não tenha gasto na Meta no período)
         crmLeads?.forEach((lead: any) => {
-          const name = (lead.campanha_nome || "Sem Campanha").toUpperCase().trim();
+          const name = normalize(lead.campanha_nome);
           
           if (!campaignsMap[name]) {
-            campaignsMap[name] = { name, spent: 0, leads: 0, qualified: 0, sales: 0 };
+            // Cria a entrada caso o lead pertença a uma campanha que não teve gasto (investimento) no período selecionado
+            campaignsMap[name] = { name, spent: 0, leads: 0, leadsMeta: 0, qualified: 0, sales: 0 };
           }
           
           campaignsMap[name].leads += 1;
-          const status = lead.situacao_atendimento?.toLowerCase() || '';
+          const status = (lead.situacao_atendimento || '').toLowerCase();
           
-          if (['schedule', 'visita', 'proposta', 'purchase', 'venda'].some(s => status.includes(s))) {
+          // Contabilização de leads qualificados e vendas conforme status do CRM
+          if (['schedule', 'visita', 'proposta', 'purchase', 'venda', 'submitapplication'].some(s => status.includes(s))) {
             campaignsMap[name].qualified += 1;
           }
           if (status.includes('venda') || status.includes('purchase')) {
@@ -168,15 +203,20 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           }
         });
 
+        // Passo C: Transforma o Objeto em Array e calcula métricas finais
         const campaignPerformance = Object.values(campaignsMap).map((m: any) => ({
           ...m,
           cplReal: m.leads > 0 ? m.spent / m.leads : 0,
-          status: (m.qualified / m.leads) > 0.25 ? 'OTIMIZADO' : (m.qualified / m.leads) > 0.15 ? 'ESTÁVEL' : 'REVISAR'
-        }));
+          cplMeta: m.leadsMeta > 0 ? m.spent / m.leadsMeta : 0,
+          // Cálculo de qualidade para o badge "REVISAR/ESTÁVEL/OTIMIZADO"
+          status: m.leads > 0 && (m.qualified / m.leads) > 0.25 ? 'OTIMIZADO' : 
+                  m.leads > 0 && (m.qualified / m.leads) > 0.15 ? 'ESTÁVEL' : 'REVISAR'
+        })).sort((a, b) => b.spent - a.spent); // Ordena pelas campanhas que mais gastaram
 
         // --- 4. KPIs SUPERIORES (Sincronizados) ---
         const investment = metaInfo.totalSpent;
-        const cplGlobal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
+        const cplReal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
+        const cplMeta = totalLeadsMeta > 0 ? investment / totalLeadsMeta : 0;
 
         setData({
           temporalData: [], // Pode ser populado conforme necessidade
@@ -186,8 +226,10 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           adsData: metaInfo.ads,
           kpis: {
             investido: investment,
-            resultado: totalLeadsCRM, // Leads Reais do CRM
-            custoPorResultado: cplGlobal,
+            totalLeadsCRM,
+            totalLeadsMeta,
+            cplReal,
+            cplMeta,
             roiReal: investment > 0 ? (totalSalesCRM * 5000 / investment) : 0 // Exemplo de cálculo de ROI
           },
           isUsingMockData: !accessToken,
@@ -201,21 +243,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
       }
     };
 
-    if (userId) {
-      loadDashboardData();
-    } else {
-      // Se não houver usuário, define um estado limpo e sem carregamento
-      setData({
-        isUsingMockData: true,
-        isLoading: false,
-        error: "Aguardando autenticação do usuário.",
-        kpis: { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 },
-        campaignPerformance: [],
-        waterfallData: [],
-        channelsData: [],
-        adsData: [],
-      });
-    }
+    loadDashboardData();
   }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData]);
 
   return data;

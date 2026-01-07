@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DateRange } from "react-day-picker";
 import { subDays } from "date-fns";
-import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays } from "lucide-react";
+import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays, Users, Target } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,7 +49,7 @@ const Dashboard = () => {
 
   const { 
     campaignPerformance = [], 
-    kpis = { investido: 0, resultado: 0, custoPorResultado: 0, roiReal: 0 }, 
+    kpis = { investido: 0, totalLeadsCRM: 0, totalLeadsMeta: 0, cplReal: 0, cplMeta: 0, roiReal: 0 }, 
     funnelData = [], 
     adsData = [], 
     isLoading, 
@@ -63,9 +63,11 @@ const Dashboard = () => {
     return {
       kpis: {
         investido: project.spent,
-        resultado: project.leads,
-        custoPorResultado: project.cplReal,
-        roiReal: kpis.roiReal
+        totalLeadsCRM: project.leads,
+        totalLeadsMeta: project.leadsMeta,
+        cplReal: project.cplReal,
+        cplMeta: project.cplMeta,
+        roiReal: kpis.roiReal,
       },
       campaignPerformance: [project]
     };
@@ -173,18 +175,32 @@ const Dashboard = () => {
 
                 {/* KPI Grid - 1 col mobile, 4 cols desktop */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-                  {[
-                    { label: "Investimento Total", val: `R$ ${displayedData.kpis.investido.toLocaleString('pt-BR')}`, sub: "Métrica Meta Ads", color: "text-white" },
-                    { label: "Leads CRM (Real)", val: displayedData.kpis.resultado, sub: "Métrica Banco de Dados", color: "text-[#f90f54]" },
-                    { label: "CPL Médio Individual", val: `R$ ${displayedData.kpis.custoPorResultado.toFixed(2)}`, sub: "Investimento / Leads CRM", color: "text-[#00C49F]" },
-                    { label: "ROI Real Estimado", val: `${displayedData.kpis.roiReal.toFixed(1)}x`, sub: "Baseado em Conversões CRM", color: "text-white" },
-                  ].map((kpi, i) => (
-                    <div key={i} className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{kpi.label}</span>
-                      <p className={`text-2xl md:text-3xl font-bold mt-2 tracking-tight ${kpi.color}`}>{kpi.val}</p>
-                      <p className="text-[10px] text-slate-500 mt-2 md:mt-3 font-medium uppercase opacity-60">{kpi.sub}</p>
+                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Investimento Total</span>
+                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-white">R$ {(displayedData.kpis.investido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-slate-500 mt-2 md:mt-3 font-medium uppercase opacity-60">Métrica Meta Ads</p>
+                  </div>
+                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Users className="w-3 h-3 text-[#f90f54]" /> Leads Totais</span>
+                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-green-400">{displayedData.kpis.totalLeadsCRM || 0}</p>
+                    <div className="flex flex-col text-[10px] mt-2 md:mt-3 text-slate-500 font-medium uppercase opacity-60">
+                      <span>Banco CRM: {displayedData.kpis.totalLeadsCRM || 0}</span>
+                      <span>Meta API: {displayedData.kpis.totalLeadsMeta || 0}</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Target className="w-3 h-3 text-[#f90f54]" /> CPL Médio</span>
+                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-green-400">R$ {(displayedData.kpis.cplReal || 0).toFixed(2)}</p>
+                    <div className="flex flex-col text-[10px] mt-2 md:mt-3 text-slate-500 font-medium uppercase opacity-60">
+                      <span>CPL Real: R$ {(displayedData.kpis.cplReal || 0).toFixed(2)}</span>
+                      <span>CPL Meta: R$ {(displayedData.kpis.cplMeta || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ROI Real Estimado</span>
+                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-white">{(displayedData.kpis.roiReal || 0).toFixed(1)}x</p>
+                    <p className="text-[10px] text-slate-500 mt-2 md:mt-3 font-medium uppercase opacity-60">Baseado em Conversões CRM</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
@@ -210,6 +226,8 @@ const Dashboard = () => {
                               <tr className="text-slate-500 border-b border-slate-800/50">
                                 <th className="pb-4 uppercase tracking-widest">Projeto</th>
                                 <th className="pb-4 uppercase tracking-widest">Investido</th>
+                                <th className="pb-4 text-center uppercase tracking-widest">Leads Meta</th>
+                                <th className="pb-4 text-center uppercase tracking-widest">CPL Meta</th>
                                 <th className="pb-4 text-center uppercase tracking-widest">Leads CRM</th>
                                 <th className="pb-4 text-center uppercase tracking-widest">CPL Real</th>
                                 <th className="pb-4 uppercase tracking-widest">Qualidade</th>
@@ -219,11 +237,17 @@ const Dashboard = () => {
                               {displayedData.campaignPerformance?.map((p: any, i: number) => (
                                 <tr key={i} className="hover:bg-white/[0.02] transition-all">
                                   <td className="py-5 font-bold text-slate-200 text-sm">{p.name}</td>
-                                  <td className="py-5 text-slate-400 font-mono">R$ {p.spent?.toLocaleString('pt-BR')}</td>
-                                  <td className="py-5 text-center font-bold text-[#f90f54] text-sm">{p.leads}</td>
-                                  <td className="py-5 text-center font-bold text-[#00C49F] text-sm">R$ {p.cplReal?.toFixed(2)}</td>
+                                  <td className="py-5 text-slate-400 font-mono">R$ {(p.spent || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                  <td className="py-5 text-center font-mono">{p.leadsMeta || 0}</td>
+                                  <td className="py-5 text-center font-mono">R$ {(p.cplMeta || 0).toFixed(2)}</td>
+                                  <td className="py-5 text-center font-bold text-[#f90f54] text-sm">{p.leads || 0}</td>
+                                  <td className="py-5 text-center font-bold text-[#00C49F] text-sm">R$ {(p.cplReal || 0).toFixed(2)}</td>
                                   <td className="py-5">
-                                    <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest border shadow-sm ${p.status === 'OTIMIZADO' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>
+                                    <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest border shadow-sm ${
+                                      p.status === 'OTIMIZADO' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
+                                      p.status === 'ESTÁVEL' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                                      'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                    }`}>
                                       {p.status}
                                     </span>
                                   </td>

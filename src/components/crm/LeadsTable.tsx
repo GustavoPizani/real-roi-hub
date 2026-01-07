@@ -33,6 +33,15 @@ interface LeadsTableProps {
   campaigns: CampaignData[];
 }
 
+const STATUS_PRIORITY: Record<string, number> = {
+  'purchase': 1,           // Prioridade Máxima
+  'submitapplication': 2,
+  'schedule': 3,
+  'contact': 4,
+  'lead': 5,               // Prioridade Padrão
+  'novo': 6
+};
+
 const getStatusBadgeVariant = (status: string | null): string => {
   const s = status?.toLowerCase() || 'lead';
   if (s.includes('purchase')) return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
@@ -108,7 +117,8 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
 
   const filteredLeads = useMemo(() => {
     let tempLeads = [...leads];
-    
+
+    // 1. Filtros de Origem (Mantidos)
     if (originFilter === 'synced') {
       tempLeads = tempLeads.filter(lead => 
         !lead.fac_id?.startsWith('ag:') && lead.nome && lead.nome !== 'Sem Nome'
@@ -119,15 +129,35 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
       );
     }
 
-    if (!searchTerm) return tempLeads;
+    // 2. Filtro de Busca (Mantido)
+    if (searchTerm) {
+      const lowercasedFilter = searchTerm.toLowerCase();
+      tempLeads = tempLeads.filter(
+        (lead) =>
+          lead.nome?.toLowerCase().includes(lowercasedFilter) ||
+          lead.email?.toLowerCase().includes(lowercasedFilter) ||
+          lead.telefone?.replace(/\D/g, '').includes(lowercasedFilter)
+      );
+    }
 
-    const lowercasedFilter = searchTerm.toLowerCase();
-    return tempLeads.filter(
-      (lead) =>
-        lead.nome?.toLowerCase().includes(lowercasedFilter) ||
-        lead.email?.toLowerCase().includes(lowercasedFilter) ||
-        lead.telefone?.replace(/\D/g, '').includes(lowercasedFilter)
-    );
+    // 3. LOGICA DE PRIORIZAÇÃO
+    return tempLeads.sort((a, b) => {
+      const statusA = a.situacao_atendimento?.toLowerCase() || 'lead';
+      const statusB = b.situacao_atendimento?.toLowerCase() || 'lead';
+
+      const priorityA = STATUS_PRIORITY[statusA] || 99;
+      const priorityB = STATUS_PRIORITY[statusB] || 99;
+
+      // Se as prioridades forem diferentes, ordena pelo peso (menor número primeiro)
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      // Se o status for o mesmo, mantém a ordem cronológica (mais novos primeiro)
+      const dateA = a.cadastro ? new Date(a.cadastro).getTime() : 0;
+      const dateB = b.cadastro ? new Date(b.cadastro).getTime() : 0;
+      return dateB - dateA;
+    });
   }, [leads, searchTerm, originFilter]);
 
   const totalPages = Math.ceil(filteredLeads.length / rowsPerPage);

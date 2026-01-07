@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
               throw new Error(`Falha ao descriptografar token para o usuário ${userId}. Verifique a ENCRYPTION_KEY.`);
             }
             
-            const leadRes = await fetch(`https://graph.facebook.com/v18.0/${leadgenId}?access_token=${accessToken}`)
+            const leadRes = await fetch(`https://graph.facebook.com/v22.0/${leadgenId}?fields=field_data,created_time,campaign_name&access_token=${accessToken}`)
             const leadData = await leadRes.json()
 
             if (leadData.error) {
@@ -112,6 +112,7 @@ Deno.serve(async (req) => {
               email: getField('email'),
               nome: getField('full_name') || `${getField('first_name') || ''} ${getField('last_name') || ''}`.trim(),
               telefone: getField('phone_number'),
+              campanha_nome: leadData.campaign_name || 'Sem Campanha', // Crucial para o Dashboard
               canal: 'Facebook Ads',
               situacao_atendimento: 'Novo',
               fac_id: leadgenId,

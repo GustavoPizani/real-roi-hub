@@ -45,18 +45,14 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
 
     try {
       const response = await supabase.functions.invoke("ai-chat", {
-        body: {
-          messages: [...messages, { role: "user", content: userMessage }],
-          context: dashboardContext,
-          userId: user?.id // Importante enviar o ID para a busca no banco
-        },
+        body: { message: userMessage },
       });
 
       if (response.error) {
         throw new Error(response.error.message);
       }
 
-      const assistantMessage = response.data?.message || "Desculpe, não consegui processar sua solicitação.";
+      const assistantMessage = response.data?.response || "Desculpe, não consegui processar sua solicitação.";
       setMessages((prev) => [...prev, { role: "assistant", content: assistantMessage }]);
     } catch (error: any) {
       console.error("AI Chat error:", error);
