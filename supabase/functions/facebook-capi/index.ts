@@ -1,13 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Cabeçalhos de CORS para permitir requisições do seu Dashboard local
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-async function hashData(data: any): Promise<string> {
+async function hashData(data: unknown): Promise<string> {
   if (!data) return "";
   const cleanData = String(data).toLowerCase().trim();
   const encoder = new TextEncoder();
@@ -25,12 +24,11 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
     const { data: settings } = await supabase.from('api_settings').select('*').eq('user_id', record.user_id);
-    const getS = (key: string) => settings?.find(s => s.setting_key === key)?.encrypted_value;
+    const getS = (key: string) => settings?.find((s: { setting_key: string; encrypted_value: string }) => s.setting_key === key)?.encrypted_value;
 
     const pixelId = getS('meta_pixel_id');
     const accessToken = getS('meta_access_token');
 
-    // Montagem do payload conforme a documentação da Meta
     const metaPayload = {
       data: [{
         event_name: record.situacao_atendimento || "Lead",
@@ -58,12 +56,11 @@ serve(async (req) => {
 
     const result = await response.json();
 
-    // --- BLOCO SCANNER (A RESPOSTA DO ERRO 400) ---
     if (!response.ok) {
       console.error(`❌ REJEIÇÃO DA META PARA ${record.email}:`, JSON.stringify(result.error));
       return new Response(JSON.stringify({ 
         success: false, 
-        error_detail: result.error, // Aqui a Meta explica o erro (ex: "Invalid email format")
+        error_detail: result.error,
         payload_sent: record.email 
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
