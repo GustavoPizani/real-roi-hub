@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DateRange } from "react-day-picker";
 import { subDays } from "date-fns";
-import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays, Users, Target } from "lucide-react";
+import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays, Users, Target, LayoutDashboard, BarChart3, Image } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,11 +14,16 @@ import APISettings from "@/components/settings/APISettings";
 import CRMUpload from "@/components/crm/CRMUpload";
 import LeadsTable from "@/components/crm/LeadsTable";
 import AIChatPanel from "@/components/dashboard/AIChatPanel";
+import MetricsUpload from "@/components/dashboard/MetricsUpload";
+import OverviewView from "@/components/dashboard/OverviewView";
+import CampaignView from "@/components/dashboard/CampaignView";
+import CreativeView from "@/components/dashboard/CreativeView";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {

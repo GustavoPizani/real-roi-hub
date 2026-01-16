@@ -45,7 +45,7 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
 
     try {
       const response = await supabase.functions.invoke("ai-chat", {
-        body: { message: userMessage },
+        body: { message: userMessage, dashboardContext },
       });
 
       if (response.error) {
