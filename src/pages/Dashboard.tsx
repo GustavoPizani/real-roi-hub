@@ -22,8 +22,8 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/ui/date-picker";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
@@ -41,7 +41,6 @@ const Dashboard = () => {
     from: subDays(new Date(), 29),
     to: new Date(),
   });
-  const dashboardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -161,178 +160,38 @@ const Dashboard = () => {
           <div className="max-w-[1600px] mx-auto space-y-6 md:space-y-8">
             
             {currentPage === "dashboard" ? (
-              <div ref={dashboardRef} className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
-                
-                {/* Mobile Project Filter */}
-                {isMobile && (
-                  <Select value={selectedProject} onValueChange={setSelectedProject}>
-                    <SelectTrigger className="w-full bg-[#1e293b] border-slate-700 text-white min-h-[44px]">
-                      <SelectValue placeholder="Selecionar Projeto" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
-                      <SelectItem value="all">Todos os Projetos</SelectItem>
-                      {campaignPerformance?.map((p: any) => (
-                        <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-
-                {/* KPI Grid - 1 col mobile, 4 cols desktop */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Investimento Total</span>
-                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-white">R$ {(displayedData.kpis.investido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    <p className="text-[10px] text-slate-500 mt-2 md:mt-3 font-medium uppercase opacity-60">Métrica Meta Ads</p>
-                  </div>
-                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Users className="w-3 h-3 text-[#f90f54]" /> Leads Totais</span>
-                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-green-400">{displayedData.kpis.totalLeadsCRM || 0}</p>
-                    <div className="flex flex-col text-[10px] mt-2 md:mt-3 text-slate-500 font-medium uppercase opacity-60">
-                      <span>Banco CRM: {displayedData.kpis.totalLeadsCRM || 0}</span>
-                      <span>Meta API: {displayedData.kpis.totalLeadsMeta || 0}</span>
-                    </div>
-                  </div>
-                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Target className="w-3 h-3 text-[#f90f54]" /> CPL Médio</span>
-                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-green-400">R$ {(displayedData.kpis.cplReal || 0).toFixed(2)}</p>
-                    <div className="flex flex-col text-[10px] mt-2 md:mt-3 text-slate-500 font-medium uppercase opacity-60">
-                      <span>CPL Real: R$ {(displayedData.kpis.cplReal || 0).toFixed(2)}</span>
-                      <span>CPL Meta: R$ {(displayedData.kpis.cplMeta || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-[20px] shadow-xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ROI Real Estimado</span>
-                    <p className="text-2xl md:text-3xl font-bold mt-2 tracking-tight text-white">{(displayedData.kpis.roiReal || 0).toFixed(1)}x</p>
-                    <p className="text-[10px] text-slate-500 mt-2 md:mt-3 font-medium uppercase opacity-60">Baseado em Conversões CRM</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-                  <div className="lg:col-span-2 space-y-6 md:space-y-8">
-                    {/* Projetos - Cards on mobile, Table on desktop */}
-                    <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 rounded-2xl md:rounded-[24px] p-5 md:p-7 shadow-2xl">
-                      <h3 className="text-sm font-bold uppercase text-white mb-5 md:mb-6 tracking-widest flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-[#f90f54]" /> Sincronização de Projetos
-                      </h3>
-                      
-                      {isMobile ? (
-                        /* Mobile: Stacked Cards */
-                        <div className="space-y-4">
-                          {displayedData.campaignPerformance?.map((p: any, i: number) => (
-                            <ProjectCard key={i} project={p} />
-                          ))}
-                        </div>
-                      ) : (
-                        /* Desktop: Table */
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead>
-                              <tr className="text-slate-500 border-b border-slate-800/50">
-                                <th className="pb-4 uppercase tracking-widest">Projeto</th>
-                                <th className="pb-4 uppercase tracking-widest">Investido</th>
-                                <th className="pb-4 text-center uppercase tracking-widest">Leads Meta</th>
-                                <th className="pb-4 text-center uppercase tracking-widest">CPL Meta</th>
-                                <th className="pb-4 text-center uppercase tracking-widest">Leads CRM</th>
-                                <th className="pb-4 text-center uppercase tracking-widest">CPL Real</th>
-                                <th className="pb-4 uppercase tracking-widest">Qualidade</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/30">
-                              {displayedData.campaignPerformance?.map((p: any, i: number) => (
-                                <tr key={i} className="hover:bg-white/[0.02] transition-all">
-                                  <td className="py-5 font-bold text-slate-200 text-sm">{p.name}</td>
-                                  <td className="py-5 text-slate-400 font-mono">R$ {(p.spent || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                  <td className="py-5 text-center font-mono">{p.leadsMeta || 0}</td>
-                                  <td className="py-5 text-center font-mono">R$ {(p.cplMeta || 0).toFixed(2)}</td>
-                                  <td className="py-5 text-center font-bold text-[#f90f54] text-sm">{p.leads || 0}</td>
-                                  <td className="py-5 text-center font-bold text-[#00C49F] text-sm">R$ {(p.cplReal || 0).toFixed(2)}</td>
-                                  <td className="py-5">
-                                    <span className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest border shadow-sm ${
-                                      p.status === 'OTIMIZADO' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
-                                      p.status === 'ESTÁVEL' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
-                                      'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                    }`}>
-                                      {p.status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Funil Waterfall - 100% width on mobile */}
-                    <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 rounded-2xl md:rounded-[24px] p-5 md:p-7 shadow-2xl">
-                      <h3 className="text-sm font-bold mb-8 md:mb-10 uppercase text-slate-400 tracking-[0.15em]">Funil de Conversão Integrado</h3>
-                      <div className="space-y-8 md:space-y-10">
-                        {funnelData?.map((f: any, i: number) => (
-                          <div key={i} className="group">
-                            <div className="flex justify-between text-[10px] font-black mb-3 uppercase tracking-widest">
-                              <span className={i === 0 ? "text-slate-300" : i === 1 ? "text-[#0088FE]" : "text-[#00C49F]"}>{f.name}</span>
-                              <span className="text-white bg-slate-800/50 px-2 py-0.5 rounded transition-all group-hover:bg-[#f90f54]/20">{f.value} ({f.percentage?.toFixed(1)}%)</span>
-                            </div>
-                            <div className="w-full bg-slate-800/50 h-6 md:h-7 rounded-lg overflow-hidden border border-slate-700/30">
-                              <div className={`${f.color} h-full transition-all duration-1000 shadow-lg`} style={{ width: `${f.percentage}%` }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6 md:space-y-8">
-                    {/* CIA Insights */}
-                    <div className="bg-[#1e293b]/40 backdrop-blur-md border-t-[3px] border-t-[#f90f54] border-x border-slate-700/50 border-b border-slate-700/50 p-5 md:p-7 rounded-2xl md:rounded-[24px] shadow-2xl">
-                      <div className="flex items-center gap-3 mb-5 md:mb-6 text-[#f90f54]">
-                        <Zap className="w-5 h-5 fill-current" />
-                        <h3 className="font-black text-xs uppercase tracking-[0.2em]">CIA Strategic Insights</h3>
-                      </div>
-                      <div className="space-y-4 md:space-y-5 text-sm leading-relaxed text-slate-400 font-medium">
-                        <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30">
-                          🚀 <strong className="text-slate-200">Sugestão:</strong> {displayedData.campaignPerformance.some((p:any) => p.status === 'OTIMIZADO') 
-                            ? 'Projetos de alta performance detectados. Realoque verba para maximizar ROI.' 
-                            : 'Otimize os criativos das campanhas em REVISAR para baixar o CPL.'}
-                        </div>
-                        <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30">
-                          ⚠️ <strong className="text-slate-200">Gargalo:</strong> {funnelData?.[1]?.percentage < 15 
-                            ? 'Baixa conversão de Visitas. Verifique o atendimento comercial.' 
-                            : 'Fluxo de visitas saudável. Foque no fechamento.'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* IA Advisor Card */}
-                    <div className="bg-gradient-to-br from-[#1e293b] to-[#0f172a] border border-[#f90f54]/30 p-5 md:p-7 rounded-2xl md:rounded-[24px] shadow-2xl">
-                       <div className="flex items-center gap-3 mb-4 text-white">
-                        <BrainCircuit className="w-6 h-6 text-[#f90f54]" />
-                        <h3 className="font-bold text-sm uppercase tracking-wider">IA ADVISOR</h3>
-                      </div>
-                      <p className="text-xs text-slate-400 mb-5 md:mb-6 leading-relaxed">
-                        Dúvidas sobre os dados? Peça uma análise profunda do ROI real do seu CRM.
-                      </p>
-                      <Button 
-                        onClick={() => setShowAIChat(true)}
-                        className="w-full bg-[#f90f54]/10 hover:bg-[#f90f54]/20 text-[#f90f54] border border-[#f90f54]/30 font-black py-5 md:py-6 rounded-xl transition-all min-h-[44px] active:scale-95"
-                      >
-                        <MessageSquare className="w-4 h-4 mr-2" /> CONSULTAR IA
-                      </Button>
-                    </div>
-
-                    {/* Mobile Export Button */}
-                    {isMobile && (
-                      <Button 
-                        onClick={handleExportPDF} 
-                        className="w-full bg-gradient-to-r from-[#f90f54] to-[#8735d2] text-white font-bold shadow-lg transition-all min-h-[48px] active:scale-95"
-                      >
-                        <FileDown className="w-4 h-4 mr-2" /> Exportar Relatório
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <Tabs defaultValue="overview" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+                  <TabsTrigger value="campaigns">Campanhas</TabsTrigger>
+                  <TabsTrigger value="creatives">Criativos</TabsTrigger>
+                  <TabsTrigger value="upload">Upload</TabsTrigger>
+                </TabsList>
+                <TabsContent value="overview" className="space-y-4">
+                  <OverviewView
+                    kpis={displayedData.kpis}
+                    campaignPerformance={displayedData.campaignPerformance}
+                    funnelData={funnelData}
+                    isMobile={isMobile}
+                  />
+                </TabsContent>
+                <TabsContent value="campaigns">
+                  <CampaignView
+                    campaigns={displayedData.campaignPerformance || []}
+                    isMobile={isMobile}
+                  />
+                </TabsContent>
+                <TabsContent value="creatives">
+                  <CreativeView creatives={adsData || []} />
+                </TabsContent>
+                <TabsContent value="upload">
+                  <MetricsUpload
+                    userId={user.id}
+                    onUploadComplete={() => setCrmRefresh((p) => p + 1)}
+                    campaigns={campaignPerformance}
+                  />
+                </TabsContent>
+              </Tabs>
             ) : currentPage === "settings" ? (
               <APISettings userId={user.id} />
             ) : (

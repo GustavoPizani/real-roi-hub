@@ -40,12 +40,15 @@ const normalizeHeader = (header: string): string => {
     'campanha': 'campaign_name',
     'nome_da_campanha': 'campaign_name',
     'ad_set_name': 'ad_set_name',
+    'adset_name': 'ad_set_name',
     'conjunto': 'ad_set_name',
+    'nome_do_conjunto_de_anúncios': 'ad_set_name',
     'nome_do_conjunto': 'ad_set_name',
     'ad_name': 'ad_name',
     'anúncio': 'ad_name',
     'nome_do_anúncio': 'ad_name',
     'creative_name': 'creative_name',
+    'nome_do_criativo': 'creative_name',
     'criativo': 'creative_name',
     'ad_creative_name': 'creative_name',
     'date': 'date',
@@ -64,6 +67,7 @@ const normalizeHeader = (header: string): string => {
     'amount_spend': 'spend',
     'amount_spent': 'spend',
     'gasto': 'spend',
+    'valor_gasto': 'spend',
     'investimento': 'spend',
     'leads': 'leads',
     'conversions': 'conversions',
@@ -85,31 +89,44 @@ const normalizeHeader = (header: string): string => {
 };
 
 const parseNumber = (value: any): number => {
-  if (typeof value === 'number') return value;
-  if (!value) return 0;
-  const cleaned = String(value).replace(/[R$\s%]/g, '').replace(/\./g, '').replace(',', '.');
-  return parseFloat(cleaned) || 0;
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  if (value === null || value === undefined || String(value).trim() === '') return 0;
+
+  let str = String(value).trim().replace(/[R$\s%]/g, '');
+
+  const hasDot = str.includes('.');
+  const hasComma = str.includes(',');
+
+  // Handles formats like 1.234,56 (Brazilian) by removing dots and replacing comma
+  if (hasComma && hasDot && str.lastIndexOf('.') < str.lastIndexOf(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } 
+  // Handles formats like 1,234.56 (US) by removing commas
+  else if (hasDot && hasComma && str.lastIndexOf(',') < str.lastIndexOf('.')) {
+    str = str.replace(/,/g, '');
+  }
+  // Handles format with only comma as decimal separator 1234,56
+  else if (hasComma) {
+    str = str.replace(',', '.');
+  }
+  
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
 };
 
 const parseDate = (value: any): string => {
   if (!value) return new Date().toISOString().split('T')[0];
-  const str = String(value);
-  // Try different date formats
-  const formats = [
-    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
-    /(\d{2})\/(\d{2})\/(\d{4})/, // DD/MM/YYYY
-    /(\d{2})-(\d{2})-(\d{4})/, // DD-MM-YYYY
-  ];
-  
-  for (const format of formats) {
-    const match = str.match(format);
-    if (match) {
-      if (format === formats[0]) return str;
-      if (format === formats[1] || format === formats[2]) {
-        return `${match[3]}-${match[2]}-${match[1]}`;
-      }
-    }
-  }
+  const dateStr = String(value).trim();
+
+  // Regex for DD/MM/YYYY or DD-MM-YYYY -> YYYY-MM-DD
+  let match = dateStr.match(/^(\d{2})\/-\/-/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+
+  // Fallback to Date constructor for other formats (e.g., YYYY-MM-DD or from ISOString)
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+
+  console.warn(`Could not parse date: "${value}". Using today's date.`);
   return new Date().toISOString().split('T')[0];
 };
 

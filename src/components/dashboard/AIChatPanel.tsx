@@ -44,8 +44,24 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
     setIsLoading(true);
 
     try {
+      // Recupera dados de métricas para dar contexto à IA
+      const { data: metricsData, error: metricsError } = await supabase
+        .from("campaign_metrics")
+        .select("campaign_name,date,spend,cpc,cpl,ctr,creative_name")
+        .eq("user_id", user.id)
+        .limit(100);
+
+      if (metricsError) {
+        console.warn("Não foi possível carregar o contexto extra do chat:", metricsError.message);
+      }
+
+      const fullContext = JSON.stringify({
+        ...JSON.parse(dashboardContext || "{}"),
+        userMetricsSummary: metricsData,
+      });
+
       const response = await supabase.functions.invoke("ai-chat", {
-        body: { message: userMessage, dashboardContext },
+        body: { message: userMessage, dashboardContext: fullContext },
       });
 
       if (response.error) {
@@ -71,9 +87,9 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
   };
 
   return (
-    <div className="w-96 h-screen bg-surface-1 border-l border-border flex flex-col animate-slide-in">
+    <div className="fixed top-0 right-0 z-50 w-96 h-full bg-slate-900/80 backdrop-blur-xl border-l border-slate-700/50 flex flex-col animate-in slide-in-from-right-24 duration-300">
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="p-4 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Bot className="w-4 h-4 text-primary" />
@@ -90,7 +106,7 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="space-y-4">
+        <div className="space-y-6">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -103,7 +119,7 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
                 </div>
               )}
               <div
-                className={`max-w-[80%] p-3 rounded-xl text-sm ${
+                className={`max-w-[85%] p-3 rounded-xl text-sm shadow-md ${
                   message.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-foreground"
@@ -132,7 +148,7 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
       </ScrollArea>
 
       {/* Input */}
-      <div className="p-4 border-t border-border">
+      <div className="p-4 border-t border-slate-800 bg-slate-900/50">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -144,7 +160,7 @@ const AIChatPanel = ({ onClose, user, dashboardContext }: AIChatPanelProps) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Pergunte sobre seus dados..."
-            className="input-dark"
+            className="bg-slate-800 border-slate-700 h-11 focus:ring-primary/50"
             disabled={isLoading}
           />
           <Button

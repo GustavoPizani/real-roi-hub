@@ -22,30 +22,32 @@ interface CampaignViewProps {
 
 type SortKey = keyof CampaignData;
 
-const formatNumber = (value: number, type: 'currency' | 'number' | 'percent' = 'number'): string => {
+const formatNumber = (value: number | undefined | null, type: 'currency' | 'number' | 'percent' = 'number'): string => {
+  // Se o valor não existir, retorna um padrão seguro
+  const safeValue = value ?? 0;
+
   if (type === 'currency') {
-    return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `R$ ${safeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   if (type === 'percent') {
-    return `${value.toFixed(2)}%`;
+    return `${safeValue.toFixed(2)}%`;
   }
-  return value.toLocaleString('pt-BR');
+  return safeValue.toLocaleString('pt-BR');
 };
 
-const getHeatmapColor = (value: number, min: number, max: number, inverse: boolean = false): string => {
-  if (max === min) return 'bg-slate-800/30';
-  const normalized = (value - min) / (max - min);
-  const intensity = inverse ? 1 - normalized : normalized;
-  
-  if (intensity < 0.25) return 'bg-red-500/20 text-red-400';
-  if (intensity < 0.5) return 'bg-yellow-500/20 text-yellow-400';
-  if (intensity < 0.75) return 'bg-blue-500/20 text-blue-400';
-  return 'bg-green-500/20 text-green-400';
-};
-
-const CampaignView = ({ campaigns }: CampaignViewProps) => {
+const CampaignView = ({ campaigns = [] }: CampaignViewProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('spend');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Adicione esta proteção logo no início
+  if (!Array.isArray(campaigns) || campaigns.length === 0) {
+    return (
+      <div className="p-8 text-center bg-[#1e293b]/20 rounded-2xl border border-slate-800">
+        <p className="text-slate-400 font-medium">Nenhuma campanha encontrada no período.</p>
+        <p className="text-xs text-slate-500 mt-2">Certifique-se de que os dados foram carregados ou faça um upload.</p>
+      </div>
+    );
+  }
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -65,21 +67,6 @@ const CampaignView = ({ campaigns }: CampaignViewProps) => {
     }
     return ((aVal as number) - (bVal as number)) * multiplier;
   });
-
-  // Calculate min/max for heatmap
-  const getMinMax = (key: keyof CampaignData) => {
-    const values = campaigns.map(c => (c[key] as number) || 0);
-    return { min: Math.min(...values), max: Math.max(...values) };
-  };
-
-  const spendRange = getMinMax('spend');
-  const impressionsRange = getMinMax('impressions');
-  const clicksRange = getMinMax('clicks');
-  const ctrRange = getMinMax('ctr');
-  const cpmRange = getMinMax('cpm');
-  const cpcRange = getMinMax('cpc');
-  const leadsRange = getMinMax('leads');
-  const cplRange = getMinMax('cpl');
 
   // Totals
   const totals = campaigns.reduce((acc, c) => ({
@@ -122,50 +109,42 @@ const CampaignView = ({ campaigns }: CampaignViewProps) => {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="text-slate-500 border-b border-slate-800/50">
-                <th className="pb-4 uppercase tracking-widest text-left">Campanha</th>
-                <th className="pb-4 uppercase tracking-widest text-left">Conjunto</th>
+                <th className="pb-4 uppercase tracking-widest text-left">Campanha</th>                
                 <SortHeader label="Gasto" sortKeyName="spend" />
-                <SortHeader label="Impressões" sortKeyName="impressions" />
-                <SortHeader label="Cliques" sortKeyName="link_clicks" />
-                <SortHeader label="CTR" sortKeyName="ctr" />
-                <SortHeader label="CPM" sortKeyName="cpm" />
-                <SortHeader label="CPC" sortKeyName="cpc" />
+                <SortHeader label="Cliques" sortKeyName="clicks" />
                 <SortHeader label="Leads" sortKeyName="leads" />
+                <SortHeader label="CTR" sortKeyName="ctr" />
+                <SortHeader label="CPC" sortKeyName="cpc" />
                 <SortHeader label="CPL" sortKeyName="cpl" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/30">
+            <tbody>
               {sortedCampaigns.map((campaign, i) => (
-                <tr key={i} className="hover:bg-white/[0.02] transition-all">
-                  <td className="py-4 font-medium text-slate-200 max-w-[200px] truncate">
-                    {campaign.campaign_name}
+                <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors group">
+                  <td className="font-medium text-slate-200 py-4">
+                    {campaign.campaign_name || 'Sem nome'}
                   </td>
-                  <td className="py-4 text-slate-400 max-w-[150px] truncate">
-                    {campaign.ad_set_name || '-'}
-                  </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.spend, spendRange.min, spendRange.max)}`}>
+                  <td className="text-right text-slate-300">
                     {formatNumber(campaign.spend, 'currency')}
                   </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.impressions, impressionsRange.min, impressionsRange.max)}`}>
-                    {formatNumber(campaign.impressions)}
+                  <td className="text-right text-slate-300">
+                    {formatNumber(campaign.clicks, 'number')}
                   </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.link_clicks, clicksRange.min, clicksRange.max)}`}>
-                    {formatNumber(campaign.link_clicks)}
+                  <td className="text-right">
+                    <span className="text-blue-400 font-semibold">
+                      {formatNumber(campaign.leads, 'number')}
+                    </span>
                   </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.ctr, ctrRange.min, ctrRange.max)}`}>
+                  <td className="text-right text-slate-300 font-mono text-xs">
                     {formatNumber(campaign.ctr, 'percent')}
                   </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.cpm, cpmRange.min, cpmRange.max, true)}`}>
-                    {formatNumber(campaign.cpm, 'currency')}
-                  </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.cpc, cpcRange.min, cpcRange.max, true)}`}>
+                  <td className="text-right text-slate-300">
                     {formatNumber(campaign.cpc, 'currency')}
                   </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.leads, leadsRange.min, leadsRange.max)}`}>
-                    {formatNumber(campaign.leads)}
-                  </td>
-                  <td className={`py-4 text-right font-mono px-2 rounded ${getHeatmapColor(campaign.cpl, cplRange.min, cplRange.max, true)}`}>
-                    {formatNumber(campaign.cpl, 'currency')}
+                  <td className="text-right">
+                    <span className="text-[#f90f54] font-bold">
+                      {formatNumber(campaign.cpl, 'currency')}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -173,15 +152,12 @@ const CampaignView = ({ campaigns }: CampaignViewProps) => {
               {/* Totals Row */}
               <tr className="bg-slate-800/30 font-bold">
                 <td className="py-4 text-[#f90f54]">Total Geral</td>
-                <td className="py-4 text-slate-400">-</td>
                 <td className="py-4 text-right font-mono text-white">{formatNumber(totals.spend, 'currency')}</td>
-                <td className="py-4 text-right font-mono text-white">{formatNumber(totals.impressions)}</td>
-                <td className="py-4 text-right font-mono text-white">{formatNumber(totals.link_clicks)}</td>
-                <td className="py-4 text-right font-mono text-cyan-400">{formatNumber(totalCtr, 'percent')}</td>
-                <td className="py-4 text-right font-mono text-purple-400">{formatNumber(totalCpm, 'currency')}</td>
-                <td className="py-4 text-right font-mono text-green-400">{formatNumber(totalCpc, 'currency')}</td>
-                <td className="py-4 text-right font-mono text-[#f90f54]">{formatNumber(totals.leads)}</td>
-                <td className="py-4 text-right font-mono text-orange-400">{formatNumber(totalCpl, 'currency')}</td>
+                <td className="py-4 text-right font-mono text-white">{formatNumber(totals.clicks)}</td>
+                <td className="py-4 text-right font-mono text-blue-400">{formatNumber(totals.leads)}</td>
+                <td className="py-4 text-right font-mono text-slate-300">{formatNumber(totalCtr, 'percent')}</td>
+                <td className="py-4 text-right font-mono text-slate-300">{formatNumber(totalCpc, 'currency')}</td>
+                <td className="py-4 text-right font-mono text-[#f90f54]">{formatNumber(totalCpl, 'currency')}</td>
               </tr>
             </tbody>
           </table>
