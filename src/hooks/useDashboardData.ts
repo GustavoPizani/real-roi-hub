@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { DateRange } from "react-day-picker";
 import { supabase } from "@/integrations/supabase/client";
-import { format, isSameDay } from "date-fns";
+import { format } from "date-fns";
 import CryptoJS from "crypto-js";
 
 const ENCRYPTION_KEY = "ads-intel-hub-2024";
@@ -49,6 +49,20 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
     if (dateRange?.to) query = query.lte("cadastro", dateRange.to.toISOString());
     const { data: leads } = await query;
     return leads || [];
+  }, [userId, dateRange]);
+
+  const fetchLocalMetricsData = useCallback(async () => {
+    if (!userId) return [];
+    console.log("Buscando dados da tabela local 'campaign_metrics' como fallback.");
+    let query = supabase.from("campaign_metrics").select("*").eq("user_id", userId);
+    if (dateRange?.from) query = query.gte("date", format(dateRange.from, "yyyy-MM-dd"));
+    if (dateRange?.to) query = query.lte("date", format(dateRange.to, "yyyy-MM-dd"));
+    const { data: metrics, error } = await query;
+    if (error) {
+      console.error("Erro ao buscar métricas locais como fallback:", error.message);
+      return [];
+    }
+    return metrics || [];
   }, [userId, dateRange]);
 
   const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
@@ -119,10 +133,74 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
 
         const adAccountIds = adAccountIdsRaw?.split(",").map(id => id.trim()).filter(Boolean) || [];
 
-        let metaInfo = { ads: [], totalSpent: 0, channels: [] };
+        let metaInfo;
+        let isUsingApi = false;
+
         if (accessToken && adAccountIds.length > 0) {
-          metaInfo = await fetchMetaData(accessToken, adAccountIds) || metaInfo;
+          try {
+            console.log("Priorizando API da Meta para dados em tempo real...");
+            const apiResponse = await fetchMetaData(accessToken, adAccountIds);
+            if (!apiResponse) throw new Error("A API da Meta não retornou dados.");
+            metaInfo = apiResponse;
+            isUsingApi = true;
+            console.log("Dados da API da Meta carregados com sucesso.");
+          } catch (apiError: any) {
+            console.warn("Falha ao buscar dados da API da Meta. Usando dados locais como fallback.", apiError.message);
+          }
         }
+        
+        if (!isUsingApi) {
+          const localMetrics = await fetchLocalMetricsData();
+          const campaignsMap: Record<string, any> = {};
+          (localMetrics || []).forEach(metric => {
+            const name = normalize(metric.campaign_name);
+            if (!campaignsMap[name]) {
+              campaignsMap[name] = { campaignName: name, spend: 0, conversions: 0 };
+            }
+            campaignsMap[name].spend += metric.spend;
+            campaignsMap[name].conversions += metric.leads; // 'leads' from meta ads file
+          });
+          const ads = Object.values(campaignsMap);
+          const totalSpent = ads.reduce((sum, ad) => sum + ad.spend, 0);
+          metaInfo = { ads, totalSpent, channels: [] };
+        }
+
+        // --- SINCRONIZAÇÃO DE CRIATIVOS (VEM DA TABELA) ---
+        const { data: creativeMetrics, error: creativeMetricsError } = await supabase
+          .from("campaign_metrics")
+          .select("creative_id, creative_name, ad_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks")
+          .eq("user_id", userId)
+          .gte("date", format(date.from, "yyyy-MM-dd"))
+          .lte("date", format(date.to, "yyyy-MM-dd"));
+
+        if (creativeMetricsError) {
+          console.error("Erro ao buscar métricas de criativos:", creativeMetricsError.message);
+        }
+
+        const creativesMap: Record<string, any> = {};
+        (creativeMetrics || []).forEach(metric => {
+          const key = metric.creative_id || metric.creative_name || metric.ad_name;
+          if (!key) return;
+
+          if (!creativesMap[key]) {
+            creativesMap[key] = {
+              creative_id: metric.creative_id,
+              name: metric.creative_name || metric.ad_name,
+              thumbnail_url: metric.thumbnail_url,
+              spend: 0, leads: 0, impressions: 0, clicks: 0,
+            };
+          }
+          creativesMap[key].spend += metric.spend || 0;
+          creativesMap[key].leads += metric.leads || 0;
+          creativesMap[key].impressions += metric.impressions || 0;
+          creativesMap[key].clicks += metric.clicks || 0;
+        });
+
+        const adsData = Object.values(creativesMap).map((c: any) => ({
+          ...c,
+          cpl: c.leads > 0 ? c.spend / c.leads : 0,
+          ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
+        })).sort((a, b) => b.spend - a.spend);
 
         // --- 1. FONTE DA VERDADE: CRM ---
         const totalLeadsCRM = crmLeads?.length || 0;
@@ -223,7 +301,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           channelsData: metaInfo.channels,
           waterfallData,
           campaignPerformance,
-          adsData: metaInfo.ads,
+          adsData,
           kpis: {
             investido: investment,
             totalLeadsCRM,
@@ -232,19 +310,19 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
             cplMeta,
             roiReal: investment > 0 ? (totalSalesCRM * 5000 / investment) : 0 // Exemplo de cálculo de ROI
           },
-          isUsingMockData: !accessToken,
+          isUsingMockData: !isUsingApi,
           isLoading: false,
           error: null,
         });
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("Erro Dashboard Data:", error);
-        setData(prev => ({ ...prev, isLoading: false, error: "Erro ao processar dados." }));
+        setData(prev => ({ ...prev, isLoading: false, error: "Erro ao processar dados do dashboard." }));
       }
     };
 
     loadDashboardData();
-  }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData]);
+  }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData, fetchLocalMetricsData]);
 
   return data;
 };

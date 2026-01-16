@@ -54,8 +54,8 @@ const CreativeView = ({ creatives = [] }: CreativeViewProps) => {
       </div>
 
       <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-        {creatives.map((creative, index) => (
-          <Card key={index} className="bg-[#1e293b]/40 border-slate-800 overflow-hidden hover:border-[#f90f54]/50 transition-all group">
+        {creatives.map((creative) => (
+          <Card key={creative.creative_id || creative.name} className="bg-[#1e293b]/40 border-slate-800 overflow-hidden hover:border-[#f90f54]/50 transition-all group">
             <div className="aspect-video bg-slate-900 relative overflow-hidden">
               {creative.thumbnail_url ? (
                 <img src={creative.thumbnail_url} alt={creative.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
