@@ -119,6 +119,87 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_metrics: {
+        Row: {
+          ad_name: string | null
+          ad_set_name: string | null
+          campaign_name: string
+          channel: string | null
+          clicks: number | null
+          conversions: number | null
+          cpc: number | null
+          cpl: number | null
+          cpm: number | null
+          created_at: string
+          creative_name: string | null
+          ctr: number | null
+          date: string
+          frequency: number | null
+          id: string
+          impressions: number | null
+          leads: number | null
+          link_clicks: number | null
+          reach: number | null
+          spend: number | null
+          thumbnail_url: string | null
+          unique_link_clicks: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ad_name?: string | null
+          ad_set_name?: string | null
+          campaign_name: string
+          channel?: string | null
+          clicks?: number | null
+          conversions?: number | null
+          cpc?: number | null
+          cpl?: number | null
+          cpm?: number | null
+          created_at?: string
+          creative_name?: string | null
+          ctr?: number | null
+          date: string
+          frequency?: number | null
+          id?: string
+          impressions?: number | null
+          leads?: number | null
+          link_clicks?: number | null
+          reach?: number | null
+          spend?: number | null
+          thumbnail_url?: string | null
+          unique_link_clicks?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ad_name?: string | null
+          ad_set_name?: string | null
+          campaign_name?: string
+          channel?: string | null
+          clicks?: number | null
+          conversions?: number | null
+          cpc?: number | null
+          cpl?: number | null
+          cpm?: number | null
+          created_at?: string
+          creative_name?: string | null
+          ctr?: number | null
+          date?: string
+          frequency?: number | null
+          id?: string
+          impressions?: number | null
+          leads?: number | null
+          link_clicks?: number | null
+          reach?: number | null
+          spend?: number | null
+          thumbnail_url?: string | null
+          unique_link_clicks?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       crm_leads: {
         Row: {
           atualizacao: string | null

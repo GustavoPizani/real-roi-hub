@@ -73,9 +73,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 
     });
 
-  } catch (err) {
-    console.error(`❌ ERRO NA FUNÇÃO: ${err.message}`);
-    return new Response(JSON.stringify({ error: err.message }), { 
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`❌ ERRO NA FUNÇÃO: ${errorMessage}`);
+    return new Response(JSON.stringify({ error: errorMessage }), { 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500 
     });
