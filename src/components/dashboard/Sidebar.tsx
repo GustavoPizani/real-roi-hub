@@ -1,16 +1,11 @@
-import { BarChart3, Settings, Upload, LogOut, Home, Users } from "lucide-react";
+import { BarChart3, Settings, Upload, LogOut, Home, Users, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
-interface SidebarProps {
-  onNavigate: (page: string) => void;
-  // currentPage is now derived internally
-}
-
-const Sidebar = ({ onNavigate }: SidebarProps) => {
+const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -30,9 +25,9 @@ const Sidebar = ({ onNavigate }: SidebarProps) => {
   // Define menuItems with path property
   // The prompt explicitly provides this structure
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "crm", label: "CRM & Leads", icon: Users }, // Novo item de navegação
-    { id: "settings", label: "Configurações", icon: Settings },
+    { id: "dashboard", label: "Dashboard", icon: BarChart3, path: "/dashboard" },
+    { id: "crm", label: "CRM & Leads", icon: Users, path: "/crm" },
+    { id: "settings", label: "Configurações", icon: Settings, path: "/settings" },
   ];
 
   return (
