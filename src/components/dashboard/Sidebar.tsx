@@ -1,5 +1,5 @@
 import { BarChart3, Settings, Upload, LogOut, Home } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button"; // Importe Users ou Database aqui
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -25,7 +25,7 @@ const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "crm", label: "CRM", icon: Upload },
+    { id: "crm", label: "CRM & Leads", icon: Users }, // Novo item de navegação
     { id: "settings", label: "Configurações", icon: Settings },
   ];
 

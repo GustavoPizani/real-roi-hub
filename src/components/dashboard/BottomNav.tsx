@@ -1,4 +1,4 @@
-import { Home, Upload, Settings, LogOut } from "lucide-react";
+import { Home, Upload, Settings, LogOut, Users } from "lucide-react"; // Importe Users aqui
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -18,7 +18,7 @@ const BottomNav = ({ onNavigate, currentPage }: BottomNavProps) => {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "crm", label: "CRM", icon: Upload },
+    { id: "crm", label: "CRM & Leads", icon: Users }, // Novo item de navegação
     { id: "settings", label: "Config", icon: Settings },
   ];
 
