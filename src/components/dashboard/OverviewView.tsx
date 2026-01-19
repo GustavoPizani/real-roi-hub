@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, DollarSign, MousePointer, Eye, Users, Target, Percent } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface OverviewViewProps {
   kpis: {
@@ -42,6 +43,19 @@ const formatNumber = (value: number | undefined | null, type: 'currency' | 'numb
   return safeValue.toLocaleString('pt-BR');
 };
 
+const descriptions: Record<string, string> = {
+  "Investimento Total": "Total investido nas plataformas de anúncios selecionadas.",
+  "CPC": "Custo por Clique: O valor médio pago por cada clique no anúncio.",
+  "CPM": "Custo por Mil Impressões: O custo para que seu anúncio seja exibido 1.000 vezes.",
+  "CTR": "Taxa de Cliques (Click-Through Rate): Percentual de pessoas que viram o anúncio e clicaram.",
+  "Conversões": "Número de leads gerados diretamente pelas campanhas da Meta, conforme dados da API.",
+  "CPL": "Custo por Lead: Quanto você pagou em média por cada lead gerado na plataforma da Meta.",
+  "Impressões": "Número total de vezes que seus anúncios foram exibidos.",
+  "Cliques": "Número total de cliques nos seus anúncios.",
+  "Alcance": "Número de pessoas únicas que viram seus anúncios pelo menos uma vez.",
+  "Frequência": "Quantidade média de vezes que cada pessoa viu seus anúncios.",
+};
+
 const calcVariation = (current: number | undefined, previous?: number): { value: number; isPositive: boolean } | null => {
   const safeCurrent = current ?? 0;
   if (!previous || previous === 0) return null;
@@ -67,26 +81,35 @@ const KPICard = ({
   const isPositive = variation ? (invertVariation ? !variation.isPositive : variation.isPositive) : true;
   
   return (
-    <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl hover:border-[#f90f54]/30 transition-all group">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
-        <Icon className={`w-4 h-4 ${color} opacity-60 group-hover:opacity-100 transition-opacity`} />
-      </div>
-      <p className={`text-2xl md:text-3xl font-bold mt-2 tracking-tight ${color}`}>{value}</p>
-      {variation && (
-        <div className="flex items-center gap-1 mt-2">
-          {isPositive ? (
-            <TrendingUp className="w-3 h-3 text-green-400" />
-          ) : (
-            <TrendingDown className="w-3 h-3 text-red-400" />
-          )}
-          <span className={`text-[10px] font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-            {variation.value.toFixed(1)}%
-          </span>
-          <span className="text-[10px] text-slate-500">vs período anterior</span>
-        </div>
-      )}
-    </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl hover:border-[#f90f54]/30 transition-all group cursor-help">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+              <Icon className={`w-4 h-4 ${color} opacity-60 group-hover:opacity-100 transition-opacity`} />
+            </div>
+            <p className={`text-xl md:text-2xl lg:text-3xl font-bold mt-2 tracking-tight ${color} whitespace-nowrap overflow-hidden text-ellipsis`}>{value}</p>
+            {variation && (
+              <div className="flex items-center gap-1 mt-2">
+                {isPositive ? (
+                  <TrendingUp className="w-3 h-3 text-green-400" />
+                ) : (
+                  <TrendingDown className="w-3 h-3 text-red-400" />
+                )}
+                <span className={`text-[10px] font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                  {variation.value.toFixed(1)}%
+                </span>
+                <span className="text-[10px] text-slate-500">vs período anterior</span>
+              </div>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent className="bg-slate-800 border-slate-700 text-xs max-w-[200px]">
+          <p>{descriptions[label] || "Métrica de performance de anúncios."}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };
 

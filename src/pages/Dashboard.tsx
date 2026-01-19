@@ -57,8 +57,9 @@ const Dashboard = () => {
     funnelData = [], 
     adsData = [], 
     isLoading, 
-    isUsingMockData 
-  } = useDashboardData(user?.id || "", date);
+    isUsingMockData,
+    refetch: loadDashboardData,
+  } = useDashboardData(user?.id || "", date, toast);
 
   const displayedData = useMemo(() => {
     if (selectedProject === "all") return { kpis, campaignPerformance };
@@ -132,6 +133,18 @@ const Dashboard = () => {
             <div className="flex items-center gap-4">
               {currentPage === "dashboard" && (
                 <>
+                  <Button 
+                    onClick={() => {
+                      toast({ title: "Sincronizando dados em tempo real..." });
+                      loadDashboardData();
+                    }}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="border-slate-700 bg-slate-800/50 hover:bg-slate-800"
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
+                    Sincronizar com Meta
+                  </Button>
                   <DatePickerWithRange date={date} setDate={setDate} />
                   <Select value={selectedProject} onValueChange={setSelectedProject}>
                     <SelectTrigger className="w-[220px] bg-[#1e293b] border-slate-700 text-white">
@@ -165,7 +178,6 @@ const Dashboard = () => {
                   <TabsTrigger value="overview">Visão Geral</TabsTrigger>
                   <TabsTrigger value="campaigns">Campanhas</TabsTrigger>
                   <TabsTrigger value="creatives">Criativos</TabsTrigger>
-                  <TabsTrigger value="upload">Upload</TabsTrigger>
                 </TabsList>
                 <TabsContent value="overview" className="space-y-4">
                   <OverviewView
@@ -184,22 +196,10 @@ const Dashboard = () => {
                 <TabsContent value="creatives">
                   <CreativeView creatives={adsData || []} />
                 </TabsContent>
-                <TabsContent value="upload">
-                  <MetricsUpload
-                    userId={user.id}
-                    onUploadComplete={() => setCrmRefresh((p) => p + 1)}
-                    campaigns={campaignPerformance}
-                  />
-                </TabsContent>
               </Tabs>
             ) : currentPage === "settings" ? (
               <APISettings userId={user.id} />
-            ) : (
-              <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                <CRMUpload userId={user.id} onUploadComplete={() => setCrmRefresh(p => p + 1)} campaigns={campaignPerformance} />
-                <LeadsTable userId={user.id} refreshTrigger={crmRefresh} campaigns={campaignPerformance} />
-              </div>
-            )}
+            ) : null }
           </div>
         </main>
       </div>

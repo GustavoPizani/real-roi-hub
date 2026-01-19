@@ -54,7 +54,9 @@ const KPICard = ({ title, value, subtitle, icon: Icon, trend, variant = "default
       
       <div>
         <p className="kpi-label mb-1">{title}</p>
-        <p className="kpi-value">{value}</p>
+        <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-2 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis leading-none">
+          {value}
+        </p>
         {subtitle && (
           <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
         )}

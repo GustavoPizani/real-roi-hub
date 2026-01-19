@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { DateRange } from "react-day-picker";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 import CryptoJS from "crypto-js";
 
 const ENCRYPTION_KEY = "ads-intel-hub-2024";
@@ -21,7 +22,34 @@ const decrypt = (ciphertext: string): string => {
   } catch { return ""; }
 };
 
-export const useDashboardData = (userId: string, dateRange?: DateRange) => {
+const parseMetric = (value: any): number => {
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  if (value === null || value === undefined || String(value).trim() === '') return 0;
+
+  let str = String(value).trim().replace(/[R$\s%]/g, '');
+
+  const hasDot = str.includes('.');
+  const hasComma = str.includes(',');
+
+  // Handles formats like 1.234,56 (Brazilian) by removing dots and replacing comma
+  if (hasComma && hasDot && str.lastIndexOf('.') < str.lastIndexOf(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } 
+  // Handles formats like 1,234.56 (US) by removing commas
+  else if (hasDot && hasComma && str.lastIndexOf(',') < str.lastIndexOf('.')) {
+    str = str.replace(/,/g, '');
+  }
+  // Handles format with only comma as decimal separator 1234,56
+  else if (hasComma) {
+    str = str.replace(',', '.');
+  }
+  
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+};
+
+export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: any) => {
+  const internalToast = useToast();
   const [data, setData] = useState<any>({
     temporalData: [],
     channelsData: [],
@@ -74,7 +102,18 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           const { data, error } = await supabase.functions.invoke("meta-insights", {
             body: { accessToken, adAccountId: id.trim(), since, until },
           });
+
+          console.log(`Retorno da Edge Function para a conta ${id.trim()}:`, data);
+
           if (error) throw error;
+
+          if (!data || !data.adsData || data.adsData.length === 0) {
+            (toast || internalToast.toast)({
+              title: "Aviso de Sincronização",
+              description: `A conta de anúncios ${id.trim()} não retornou dados para o período selecionado.`,
+            });
+          }
+
           return data;
         } catch (e) {
           console.error(`Erro ao buscar dados da conta ${id.trim()}:`, e);
@@ -95,10 +134,13 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
       }
     });
     return { ads, totalSpent, channels };
-  }, [dateRange]);
+  }, [dateRange, toast, internalToast.toast]);
 
-  useEffect(() => {
-    const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
+      // Definição das datas no topo para garantir que existam antes de qualquer query.
+      const startDate = dateRange?.from ?? subDays(new Date(), 29);
+      const endDate = dateRange?.to ?? new Date();
+
       // Adicionado para evitar chamadas de API se o usuário estiver deslogado ou saindo.
       if (!userId) {
         setData({
@@ -157,21 +199,23 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
             if (!campaignsMap[name]) {
               campaignsMap[name] = { campaignName: name, spend: 0, conversions: 0 };
             }
-            campaignsMap[name].spend += metric.spend;
-            campaignsMap[name].conversions += metric.leads; // 'leads' from meta ads file
+            campaignsMap[name].spend += parseMetric(metric.spend);
+            campaignsMap[name].conversions += parseMetric(metric.leads);
           });
           const ads = Object.values(campaignsMap);
-          const totalSpent = ads.reduce((sum, ad) => sum + ad.spend, 0);
+          const totalSpent = ads.reduce((sum, ad) => sum + parseMetric(ad.spend), 0);
           metaInfo = { ads, totalSpent, channels: [] };
         }
 
         // --- SINCRONIZAÇÃO DE CRIATIVOS (VEM DA TABELA) ---
         const { data: creativeMetrics, error: creativeMetricsError } = await supabase
           .from("campaign_metrics")
-          .select("creative_id, creative_name, ad_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks")
+          .select("campaign_name, ad_id, ad_name, creative_id, creative_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks, reach, frequency")
           .eq("user_id", userId)
-          .gte("date", format(date.from, "yyyy-MM-dd"))
-          .lte("date", format(date.to, "yyyy-MM-dd"));
+          .gte("date", format(startDate, "yyyy-MM-dd"))
+          .lte("date", format(endDate, "yyyy-MM-dd"));
+
+        console.log('Dados brutos do banco (campaign_metrics):', creativeMetrics);
 
         if (creativeMetricsError) {
           console.error("Erro ao buscar métricas de criativos:", creativeMetricsError.message);
@@ -179,70 +223,33 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
 
         const creativesMap: Record<string, any> = {};
         (creativeMetrics || []).forEach(metric => {
-          const key = metric.creative_id || metric.creative_name || metric.ad_name;
+          // Prioriza o ad_id da API (mais confiável), com fallback para dados de upload
+          const key = metric.ad_id || metric.creative_id || metric.ad_name;
           if (!key) return;
 
           if (!creativesMap[key]) {
             creativesMap[key] = {
-              creative_id: metric.creative_id,
-              name: metric.creative_name || metric.ad_name,
+              // Mapeia o ad_id para o creative_id que a view espera como chave
+              creative_id: metric.ad_id || metric.creative_id,
+              name: metric.ad_name || metric.creative_name,
               thumbnail_url: metric.thumbnail_url,
               spend: 0, leads: 0, impressions: 0, clicks: 0,
             };
           }
-          creativesMap[key].spend += metric.spend || 0;
-          creativesMap[key].leads += metric.leads || 0;
-          creativesMap[key].impressions += metric.impressions || 0;
-          creativesMap[key].clicks += metric.clicks || 0;
+          
+          creativesMap[key].spend += parseMetric(metric.spend);
+          creativesMap[key].leads += parseMetric(metric.leads);
+          creativesMap[key].impressions += parseMetric(metric.impressions);
+          creativesMap[key].clicks += parseMetric(metric.clicks);
         });
 
         const adsData = Object.values(creativesMap).map((c: any) => ({
           ...c,
-          cpl: c.leads > 0 ? c.spend / c.leads : 0,
+          spend: parseMetric(c.spend),
+          leads: parseMetric(c.leads),
+          cpl: parseMetric(c.leads) > 0 ? parseMetric(c.spend) / parseMetric(c.leads) : 0,
           ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
         })).sort((a, b) => b.spend - a.spend);
-
-        // --- 1. FONTE DA VERDADE: CRM ---
-        const totalLeadsCRM = crmLeads?.length || 0;
-        const totalVisitsCRM = crmLeads?.filter(l => 
-          l.situacao_atendimento?.toLowerCase().includes('schedule') || 
-          l.situacao_atendimento?.toLowerCase().includes('visita')
-        ).length || 0;
-        const totalSalesCRM = crmLeads?.filter(l => 
-          l.situacao_atendimento?.toLowerCase().includes('purchase') || 
-          l.situacao_atendimento?.toLowerCase().includes('venda')
-        ).length || 0;
-
-        // NOVO: Leads da Meta API
-        const totalLeadsMeta = metaInfo.ads.reduce((sum, ad) => sum + (parseInt(ad.conversions || '0', 10)), 0);
-
-        // --- 2. FUNIL WATERFALL (Sincronizado com CRM) ---
-        const waterfallData: WaterfallData[] = [
-          { 
-            name: 'LEADS META (API)', 
-            value: totalLeadsMeta, 
-            percentage: 100, 
-            color: 'bg-blue-600' 
-          },
-          { 
-            name: 'LEADS CRM (REAL)', 
-            value: totalLeadsCRM,
-            percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsMeta) * 100 : 0,
-            color: 'bg-gradient-to-r from-[#f90f54] to-[#8735d2]' 
-          },
-          { 
-            name: 'VISITAS AGENDADAS', 
-            value: totalVisitsCRM,
-            percentage: totalLeadsCRM > 0 ? (totalVisitsCRM / totalLeadsCRM) * 100 : 0,
-            color: 'bg-[#0088FE]'
-          },
-          { 
-            name: 'VENDAS', 
-            value: totalSalesCRM,
-            percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0,
-            color: 'bg-[#00C49F]'
-          }
-        ];
 
         // --- 3. PERFORMANCE POR PROJETO (UNIFICAÇÃO TOTAL) ---
         const campaignsMap: Record<string, any> = {};
@@ -250,14 +257,26 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
         // Função auxiliar para normalizar nomes e evitar duplicidade por erro de digitação
         const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
 
-        // Passo A: Mapeia dados de Investimento da Meta
-        metaInfo.ads.forEach(ad => {
-          const name = normalize(ad.campaignName);
+        // Passo A: Agrega dados da tabela campaign_metrics (fonte de dados de performance)
+        (creativeMetrics || []).forEach(metric => {
+          console.log(`Somando para Campanha '${normalize(metric.campaign_name)}': Spend: ${metric.spend}, Leads: ${metric.leads}, Clicks: ${metric.clicks}`);
+          const name = normalize(metric.campaign_name);
           if (!campaignsMap[name]) {
-            campaignsMap[name] = { name, spent: 0, leads: 0, leadsMeta: 0, qualified: 0, sales: 0 };
+            campaignsMap[name] = { 
+              name, 
+              spend: 0, 
+              leads: 0, // CRM leads
+              leadsMeta: 0, // Meta leads
+              impressions: 0,
+              clicks: 0,
+              qualified: 0, 
+              sales: 0 
+            };
           }
-          campaignsMap[name].spent += ad.spend;
-          campaignsMap[name].leadsMeta += parseInt(ad.conversions || '0', 10);
+          campaignsMap[name].spend += parseMetric(metric.spend);
+          campaignsMap[name].leadsMeta += parseMetric(metric.leads);
+          campaignsMap[name].impressions += parseMetric(metric.impressions);
+          campaignsMap[name].clicks += parseMetric(metric.clicks);
         });
 
         // Passo B: Agrega dados do CRM (Mesmo que a campanha não tenha gasto na Meta no período)
@@ -265,8 +284,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
           const name = normalize(lead.campanha_nome);
           
           if (!campaignsMap[name]) {
-            // Cria a entrada caso o lead pertença a uma campanha que não teve gasto (investimento) no período selecionado
-            campaignsMap[name] = { name, spent: 0, leads: 0, leadsMeta: 0, qualified: 0, sales: 0 };
+            campaignsMap[name] = { name, spend: 0, leads: 0, leadsMeta: 0, impressions: 0, clicks: 0, qualified: 0, sales: 0 };
           }
           
           campaignsMap[name].leads += 1;
@@ -284,31 +302,70 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
         // Passo C: Transforma o Objeto em Array e calcula métricas finais
         const campaignPerformance = Object.values(campaignsMap).map((m: any) => ({
           ...m,
-          cplReal: m.leads > 0 ? m.spent / m.leads : 0,
-          cplMeta: m.leadsMeta > 0 ? m.spent / m.leadsMeta : 0,
+          cplReal: m.leads > 0 ? m.spend / m.leads : 0,
+          cplMeta: m.leadsMeta > 0 ? m.spend / m.leadsMeta : 0,
+          cpc: m.clicks > 0 ? m.spend / m.clicks : 0,
+          ctr: m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0,
+          cpm: m.impressions > 0 ? (m.spend / m.impressions) * 1000 : 0,
           // Cálculo de qualidade para o badge "REVISAR/ESTÁVEL/OTIMIZADO"
           status: m.leads > 0 && (m.qualified / m.leads) > 0.25 ? 'OTIMIZADO' : 
                   m.leads > 0 && (m.qualified / m.leads) > 0.15 ? 'ESTÁVEL' : 'REVISAR'
-        })).sort((a, b) => b.spent - a.spent); // Ordena pelas campanhas que mais gastaram
+        })).sort((a, b) => b.spend - a.spend); // Ordena pelas campanhas que mais gastaram
 
         // --- 4. KPIs SUPERIORES (Sincronizados) ---
-        const investment = metaInfo.totalSpent;
+        const totalMetrics = (creativeMetrics || []).reduce((acc, m) => {
+          acc.spend += parseMetric(m.spend);
+          acc.impressions += parseMetric(m.impressions);
+          acc.clicks += parseMetric(m.clicks);
+          acc.leadsMeta += parseMetric(m.leads);
+          acc.reach += parseMetric(m.reach); // Novo: somando alcance
+          acc.freqSum += parseMetric(m.frequency) * parseMetric(m.impressions); // Para média ponderada
+          return acc;
+        }, { spend: 0, impressions: 0, clicks: 0, leadsMeta: 0, reach: 0, freqSum: 0 });
+
+        const investment = totalMetrics.spend;
+        const totalLeadsMeta = totalMetrics.leadsMeta;
+        const avgFrequency = totalMetrics.impressions > 0 ? totalMetrics.freqSum / totalMetrics.impressions : 0;
+
+        // Métrica Real vinda do CRM
+        const totalLeadsCRM = crmLeads?.length || 0;
+        const totalSalesCRM = crmLeads?.filter(l => l.situacao_atendimento?.toLowerCase().includes('venda')).length || 0;
+
+        // Cálculos de CPL
         const cplReal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
         const cplMeta = totalLeadsMeta > 0 ? investment / totalLeadsMeta : 0;
 
+        // --- 5. FUNIL WATERFALL (Sincronizado com CRM) ---
+        const totalVisitsCRM = crmLeads?.filter(l => 
+          l.situacao_atendimento?.toLowerCase().includes('schedule') || 
+          l.situacao_atendimento?.toLowerCase().includes('visita')
+        ).length || 0;
+
+        const waterfallData: WaterfallData[] = [
+          { name: 'LEADS META (API)', value: totalLeadsMeta, percentage: 100, color: 'bg-blue-600' },
+          { name: 'LEADS CRM (REAL)', value: totalLeadsCRM, percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsMeta) * 100 : 0, color: 'bg-[#f90f54]' },
+          { name: 'VISITAS AGENDADAS', value: totalVisitsCRM, percentage: totalLeadsCRM > 0 ? (totalVisitsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#0088FE]' },
+          { name: 'VENDAS', value: totalSalesCRM, percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#00C49F]' }
+        ];
+
         setData({
-          temporalData: [], // Pode ser populado conforme necessidade
-          channelsData: metaInfo.channels,
           waterfallData,
           campaignPerformance,
           adsData,
           kpis: {
-            investido: investment,
+            spend: investment,
+            impressions: totalMetrics.impressions,
+            clicks: totalMetrics.clicks,
+            leads: totalLeadsMeta, // Este alimenta a "Conversão" no overview
+            ctr: totalMetrics.impressions > 0 ? (totalMetrics.clicks / totalMetrics.impressions) * 100 : 0,
+            cpc: totalMetrics.clicks > 0 ? investment / totalMetrics.clicks : 0,
+            cpm: totalMetrics.impressions > 0 ? (investment / totalMetrics.impressions) * 1000 : 0,
+            cpl: cplMeta, // CPL da aba campanhas
+            reach: totalMetrics.reach, // Alimentando o card de Alcance
+            frequency: avgFrequency, // Alimentando o card de Frequência
             totalLeadsCRM,
-            totalLeadsMeta,
             cplReal,
-            cplMeta,
-            roiReal: investment > 0 ? (totalSalesCRM * 5000 / investment) : 0 // Exemplo de cálculo de ROI
+            roiReal: investment > 0 ? (totalSalesCRM * 5000 / investment) : 0 
           },
           isUsingMockData: !isUsingApi,
           isLoading: false,
@@ -319,10 +376,14 @@ export const useDashboardData = (userId: string, dateRange?: DateRange) => {
         console.error("Erro Dashboard Data:", error);
         setData(prev => ({ ...prev, isLoading: false, error: "Erro ao processar dados do dashboard." }));
       }
-    };
+    }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData, fetchLocalMetricsData, toast, internalToast.toast]);
 
+  useEffect(() => {
     loadDashboardData();
-  }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData, fetchLocalMetricsData]);
+  }, [loadDashboardData]);
 
-  return data;
+  return {
+    ...data,
+    refetch: loadDashboardData,
+  };
 };
