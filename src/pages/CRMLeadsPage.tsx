@@ -15,16 +15,11 @@ const CRMLeadsPage = () => {
   const [user, setUser] = useState<any>(null);
   const [crmRefresh, setCrmRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
+  const location = useLocation();
 
-  // Handles navigation from shared layout components
-  const handleNavigation = (page: string) => {
-    if (page === 'dashboard') {
-      navigate('/dashboard');
-    } else if (page === 'settings') {
-      // Assuming a settings page route exists, e.g., /settings
-      navigate('/settings');
-    }
-  };
+  // currentPage is now derived internally by Sidebar and BottomNav
+  // The CRMLeadsPage itself doesn't need a currentPage state for its own rendering logic
+  // as it always renders CRMUpload and LeadsTable.
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -50,7 +45,7 @@ const CRMLeadsPage = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-[#0f172a] text-slate-200">
       {!isMobile && (
-        <Sidebar onNavigate={handleNavigation} currentPage="crm" />
+        <Sidebar />
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -78,7 +73,7 @@ const CRMLeadsPage = () => {
       </div>
 
       {isMobile && (
-        <BottomNav onNavigate={handleNavigation} currentPage="crm" />
+        <BottomNav />
       )}
     </div>
   );

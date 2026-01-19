@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { DateRange } from "react-day-picker";
+import { useNavigate, useLocation } from "react-router-dom";
 import { subDays } from "date-fns";
 import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays, Users, Target, LayoutDashboard, BarChart3, Image } from "lucide-react";
 import html2canvas from "html2canvas";
@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [user, setUser] = useState<any>(null);
@@ -49,6 +50,10 @@ const Dashboard = () => {
       else setUser(session.user);
     };
     checkAuth();
+
+    // Update currentPage based on URL changes
+    const path = location.pathname.split('/')[1] || 'dashboard';
+    setCurrentPage(path);
   }, [navigate]);
 
   const { 
@@ -107,8 +112,8 @@ const Dashboard = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-[#0f172a] text-slate-200">
       {/* Desktop Sidebar */}
-      {!isMobile && (
-        <Sidebar onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} currentPage={currentPage} />
+      {!isMobile && user && ( // Pass user prop to Sidebar if needed, otherwise remove
+        <Sidebar onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} /> // onNavigate is still used for chat
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -205,8 +210,8 @@ const Dashboard = () => {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      {isMobile && (
-        <BottomNav onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} currentPage={currentPage} />
+      {isMobile && user && ( // Pass user prop to BottomNav if needed, otherwise remove
+        <BottomNav onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} /> // onNavigate is still used for chat
       )}
 
       {showAIChat && (

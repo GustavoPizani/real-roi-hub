@@ -1,18 +1,22 @@
-import { BarChart3, Settings, Upload, LogOut, Home } from "lucide-react";
-import { Button } from "@/components/ui/button"; // Importe Users ou Database aqui
+import { BarChart3, Settings, Upload, LogOut, Home, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 interface SidebarProps {
   onNavigate: (page: string) => void;
-  currentPage: string;
+  // currentPage is now derived internally
 }
 
-const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
+const Sidebar = ({ onNavigate }: SidebarProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
+  // Determine the active page based on the current URL pathname
+  // Use startsWith for partial matches, e.g., /crm/leads should still highlight /crm
+  const isActive = (path: string) => location.pathname.startsWith(path);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -23,6 +27,8 @@ const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
     }
   };
 
+  // Define menuItems with path property
+  // The prompt explicitly provides this structure
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
     { id: "crm", label: "CRM & Leads", icon: Users }, // Novo item de navegação
@@ -52,11 +58,11 @@ const Sidebar = ({ onNavigate, currentPage }: SidebarProps) => {
             variant="ghost"
             className={cn(
               "w-full justify-start gap-3 h-11 text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all duration-300 rounded-xl",
-              currentPage === item.id && "bg-[#f90f54]/10 text-[#f90f54] border border-[#f90f54]/20 shadow-[0_0_20px_rgba(249,15,84,0.1)]"
+              isActive(item.path) && "bg-[#f90f54]/10 text-[#f90f54] border border-[#f90f54]/20 shadow-[0_0_20px_rgba(249,15,84,0.1)]"
             )}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => navigate(item.path)} // Sidebar handles its own navigation for menu items
           >
-            <item.icon className={cn("w-5 h-5", currentPage === item.id ? "text-[#f90f54]" : "text-slate-500")} />
+            <item.icon className={cn("w-5 h-5", isActive(item.path) ? "text-[#f90f54]" : "text-slate-500")} />
             <span className="font-bold text-xs uppercase tracking-wider">{item.label}</span>
           </Button>
         ))}

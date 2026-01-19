@@ -1,25 +1,30 @@
 import { Home, Upload, Settings, LogOut, Users } from "lucide-react"; // Importe Users aqui
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface BottomNavProps {
   onNavigate: (page: string) => void;
-  currentPage: string;
+  // currentPage is now derived internally
 }
 
-const BottomNav = ({ onNavigate, currentPage }: BottomNavProps) => {
+const BottomNav = ({ onNavigate }: BottomNavProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Determine the active page based on the current URL pathname
+  const isActive = (path: string) => location.pathname.startsWith(path);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
   };
 
+  // Define menuItems with path property
+  // The prompt explicitly provides this structure
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "crm", label: "CRM & Leads", icon: Users }, // Novo item de navegação
-    { id: "settings", label: "Config", icon: Settings },
+    { id: "dashboard", label: "Dashboard", icon: Home, path: "/dashboard" },
+    { id: "crm", label: "CRM & Leads", icon: Users, path: "/crm" },
+    { id: "settings", label: "Config", icon: Settings, path: "/settings" },
   ];
 
   return (
@@ -28,17 +33,17 @@ const BottomNav = ({ onNavigate, currentPage }: BottomNavProps) => {
         {menuItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => navigate(item.path)} // BottomNav handles its own navigation for menu items
             className={cn(
               "flex flex-col items-center justify-center min-w-[64px] min-h-[44px] py-2 px-3 rounded-xl transition-all active:scale-95",
-              currentPage === item.id
+              isActive(item.path)
                 ? "text-[#f90f54]"
                 : "text-slate-400 hover:text-slate-200"
             )}
           >
             <item.icon className={cn(
               "w-6 h-6 mb-1",
-              currentPage === item.id && "drop-shadow-[0_0_8px_rgba(249,15,84,0.5)]"
+              isActive(item.path) && "drop-shadow-[0_0_8px_rgba(249,15,84,0.5)]"
             )} />
             <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
           </button>
