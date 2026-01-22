@@ -24,13 +24,22 @@ const decrypt = (ciphertext: string): string => {
 
 const parseMetric = (value: any): number => {
   if (value === null || value === undefined || value === "") return 0;
-  // Remove R$, espaços, pontos de milhar e garante que a vírgula vire ponto decimal
-  const cleaned = String(value)
+  if (typeof value === 'number') return value;
+
+  const sValue = String(value)
     .replace(/R\$\s?/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.')
     .trim();
-  const num = parseFloat(cleaned);
+
+  // Se o valor contém vírgula, tratamos como formato brasileiro (ex: "1.234,56").
+  // Removemos os pontos de milhar e substituímos a vírgula decimal por ponto.
+  if (sValue.includes(',')) {
+    const num = parseFloat(sValue.replace(/\./g, '').replace(',', '.'));
+    return isNaN(num) ? 0 : num;
+  }
+
+  // Se não há vírgula, pode ser um formato americano (ex: "1,234.56") ou um número simples.
+  // Removemos as vírgulas de milhar para garantir o parse correto.
+  const num = parseFloat(sValue.replace(/,/g, ''));
   return isNaN(num) ? 0 : num;
 };
 
