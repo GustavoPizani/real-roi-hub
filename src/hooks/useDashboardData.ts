@@ -23,28 +23,14 @@ const decrypt = (ciphertext: string): string => {
 };
 
 const parseMetric = (value: any): number => {
-  if (typeof value === 'number') return isNaN(value) ? 0 : value;
-  if (value === null || value === undefined || String(value).trim() === '') return 0;
-
-  let str = String(value).trim().replace(/[R$\s%]/g, '');
-
-  const hasDot = str.includes('.');
-  const hasComma = str.includes(',');
-
-  // Handles formats like 1.234,56 (Brazilian) by removing dots and replacing comma
-  if (hasComma && hasDot && str.lastIndexOf('.') < str.lastIndexOf(',')) {
-    str = str.replace(/\./g, '').replace(',', '.');
-  } 
-  // Handles formats like 1,234.56 (US) by removing commas
-  else if (hasDot && hasComma && str.lastIndexOf(',') < str.lastIndexOf('.')) {
-    str = str.replace(/,/g, '');
-  }
-  // Handles format with only comma as decimal separator 1234,56
-  else if (hasComma) {
-    str = str.replace(',', '.');
-  }
-  
-  const num = parseFloat(str);
+  if (value === null || value === undefined || value === "") return 0;
+  // Remove R$, espaços, pontos de milhar e garante que a vírgula vire ponto decimal
+  const cleaned = String(value)
+    .replace(/R\$\s?/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim();
+  const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 };
 
@@ -223,22 +209,21 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
 
         const creativesMap: Record<string, any> = {};
         (creativeMetrics || []).forEach(metric => {
-          // Prioriza o ad_id da API (mais confiável), com fallback para dados de upload
           const key = metric.ad_id || metric.creative_id || metric.ad_name;
           if (!key) return;
 
           if (!creativesMap[key]) {
             creativesMap[key] = {
-              // Mapeia o ad_id para o creative_id que a view espera como chave
-              creative_id: metric.ad_id || metric.creative_id,
-              name: metric.ad_name || metric.creative_name,
+              creative_id: metric.ad_id,
+              name: metric.ad_name,
               thumbnail_url: metric.thumbnail_url,
               spend: 0, leads: 0, impressions: 0, clicks: 0,
             };
           }
           
+          // GARANTIA: Soma os leads garantindo que sejam números
           creativesMap[key].spend += parseMetric(metric.spend);
-          creativesMap[key].leads += parseMetric(metric.leads);
+          creativesMap[key].leads += parseMetric(metric.leads); // Use 'leads' ou 'conversions' conforme seu banco
           creativesMap[key].impressions += parseMetric(metric.impressions);
           creativesMap[key].clicks += parseMetric(metric.clicks);
         });
@@ -332,8 +317,10 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         const totalSalesCRM = crmLeads?.filter(l => l.situacao_atendimento?.toLowerCase().includes('venda')).length || 0;
 
         // Cálculos de CPL
+        // Use leadsMeta para o CPL das campanhas (Meta)
+        const cplMeta = totalMetrics.leadsMeta > 0 ? investment / totalMetrics.leadsMeta : 0;
+        // Use leadsCRM para o CPL Real (Financeiro)
         const cplReal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
-        const cplMeta = totalLeadsMeta > 0 ? investment / totalLeadsMeta : 0;
 
         // --- 5. FUNIL WATERFALL (Sincronizado com CRM) ---
         const totalVisitsCRM = crmLeads?.filter(l => 
@@ -341,11 +328,11 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           l.situacao_atendimento?.toLowerCase().includes('visita')
         ).length || 0;
 
-        const waterfallData: WaterfallData[] = [
-          { name: 'LEADS META (API)', value: totalLeadsMeta, percentage: 100, color: 'bg-blue-600' },
-          { name: 'LEADS CRM (REAL)', value: totalLeadsCRM, percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsMeta) * 100 : 0, color: 'bg-[#f90f54]' },
-          { name: 'VISITAS AGENDADAS', value: totalVisitsCRM, percentage: totalLeadsCRM > 0 ? (totalVisitsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#0088FE]' },
-          { name: 'VENDAS', value: totalSalesCRM, percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#00C49F]' }
+        const waterfallData = [
+          { name: 'LEADS META', value: totalLeadsMeta, percentage: 100, color: 'bg-blue-600' },
+          { name: 'LEADS CRM', value: totalLeadsCRM, percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#f90f54]' },
+          { name: 'VISITAS', value: totalVisitsCRM, percentage: totalLeadsCRM > 0 ? (totalVisitsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-blue-400' },
+          { name: 'VENDAS', value: totalSalesCRM, percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0, color: 'bg-green-500' }
         ];
 
         setData({
