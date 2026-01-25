@@ -8,7 +8,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Interface para tipar os dados brutos da API da Meta
+// Interface atualizada para incluir 'actions'
 interface Insight {
   campaign_id: string;
   campaign_name: string;
@@ -23,7 +23,9 @@ interface Insight {
   reach: string;
   cpc: string;
   ctr: string;
+  // O Meta pode mandar leads aqui (pixel) ou em actions (formulários)
   conversions?: { action_type: string; value: string }[];
+  actions?: { action_type: string; value: string }[]; 
   inline_link_click_ctr?: string;
   frequency?: string;
   ad_creative?: {
@@ -43,16 +45,9 @@ serve(async (req) => {
     const requestBody = await req.json();
     const { adAccountId, accessToken, since, until, selectedCampaign } = requestBody;
 
-    // ===== LOG 1: PAYLOAD RECEBIDO =====
     console.log("========================================");
-    console.log("[META-INSIGHTS] 1. PAYLOAD RECEBIDO:");
-    console.log(JSON.stringify({
-      adAccountId,
-      since,
-      until,
-      selectedCampaign,
-      hasAccessToken: !!accessToken
-    }, null, 2));
+    console.log("[META-INSIGHTS] 1. INICIANDO SINCRONIZAÇÃO (MODO FORMULÁRIO):");
+    console.log(`Conta: ${adAccountId} | Periodo: ${since} a ${until}`);
     console.log("========================================");
 
     // Cria um cliente Supabase com as permissões do usuário que fez a chamada
@@ -65,15 +60,14 @@ serve(async (req) => {
     // Valida a sessão do usuário
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
-      console.error("[META-INSIGHTS] Usuário não autenticado");
       return new Response(JSON.stringify({ error: "Usuário não autenticado" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 401,
       });
     }
 
-    // Define os campos que serão buscados na API de Insights
-    const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,reach,conversions,cpc,ctr,inline_link_click_ctr,frequency';
+    // ADICIONADO 'actions' NA REQUISIÇÃO
+    const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,reach,actions,conversions,cpc,ctr,inline_link_click_ctr,frequency';
 
     const time_range = JSON.stringify({ since, until });
 
@@ -87,32 +81,14 @@ serve(async (req) => {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("[META-INSIGHTS] Erro da API do Facebook:", JSON.stringify(data.error, null, 2));
+        console.error("[META-INSIGHTS] Erro API Meta:", JSON.stringify(data.error));
         throw new Error(data.error?.message || "Falha ao consultar a API do Facebook.");
       }
       
       allInsights.push(...data.data);
       url = data.paging?.next;
       pageCount++;
-    }
-
-    // ===== LOG 2: RESPOSTA BRUTA DA API =====
-    console.log("========================================");
-    console.log("[META-INSIGHTS] 2. RESPOSTA BRUTA DA API META:");
-    console.log(JSON.stringify({
-      totalInsights: allInsights.length,
-      pagesLoaded: pageCount,
-      sampleData: allInsights.slice(0, 3).map(i => ({
-        campaign_name: i.campaign_name,
-        ad_name: i.ad_name,
-        spend: i.spend,
-        impressions: i.impressions,
-        clicks: i.clicks,
-        conversions: i.conversions
-      }))
-    }, null, 2));
-    console.log("========================================");
-    
+    }    
     // Batch fetch ad creative details (thumbnail_url e creative_id)
     const adIds = allInsights.map(i => i.ad_id).filter(Boolean);
     const creativeDetailsMap = new Map<string, { creative_id?: string; thumbnail_url?: string }>();
@@ -131,27 +107,22 @@ serve(async (req) => {
         try {
           const batchRes = await fetch(batchUrl, { method: 'POST' });
           const batchData = await batchRes.json();
-
-          if (!batchRes.ok) {
-            console.warn(`[META-INSIGHTS] Falha no batch de thumbnails com status ${batchRes.status}`, batchData);
-            continue;
-          }
-
-          batchData.forEach((item: any, index: number) => {
-            const adId = adIds[i + index];
-            if (item.code === 200) {
-              const body = JSON.parse(item.body);
-              const creative = body.creative || body.adcreatives?.data?.[0];
-              if (creative) {
-                creativeDetailsMap.set(adId, {
-                  creative_id: creative.id,
-                  thumbnail_url: creative.image_url || creative.thumbnail_url
-                });
+          if (batchRes.ok) {
+            batchData.forEach((item: any, index: number) => {
+              if (item.code === 200) {
+                const body = JSON.parse(item.body);
+                const creative = body.creative || body.adcreatives?.data?.[0];
+                if (creative) {
+                  creativeDetailsMap.set(adIds[i + index], {
+                    creative_id: creative.id,
+                    thumbnail_url: creative.image_url || creative.thumbnail_url
+                  });
+                }
               }
-            }
-          });
+            });
+          }
         } catch (e) {
-          console.error(`[META-INSIGHTS] Erro durante o batch de thumbnails para o chunk a partir do índice ${i}:`, e.message);
+          console.error("Erro thumbnails:", e);
         }
       }
     }
@@ -166,11 +137,49 @@ serve(async (req) => {
 
     // Mapeia os dados da API para o formato da tabela 'campaign_metrics'
     const metricsToUpsert = allInsights.map((insight) => {
-      // Filtra por múltiplos tipos de leads e soma os valores
-      const leadActions = insight.conversions?.filter(c => 
-        ['lead', 'offsite_conversion.fb_pixel_lead', 'contact', 'leadgen_grouped'].includes(c.action_type)
-      );
-      const totalLeads = leadActions?.reduce((acc, curr) => acc + parseInt(curr.value || "0", 10), 0) || 0;
+      
+      // --- LÓGICA DE LEADS CORRIGIDA PARA FORMULÁRIOS ---
+      // Combina 'actions' e 'conversions' para não perder nada
+      const allEvents = [
+        ...(insight.actions || []), 
+        ...(insight.conversions || [])
+      ];
+
+      // Lista de tipos aceitos como LEAD
+      const validLeadTypes = [
+        'lead',             // Padrãozão do Meta (geralmente soma tudo)
+        'on_facebook_lead', // ESPECÍFICO para Formulários Nativos (Lead Ads)
+        'leadgen_grouped',  // Agrupado
+        'contact',
+        'submit_application',
+        'offsite_conversion.fb_pixel_lead'
+      ];
+
+      // Filtra e soma (evita duplicidade se o mesmo evento vier com nomes diferentes? 
+      // O Meta geralmente separa. Para garantir, pegamos o 'lead' que costuma ser o totalizador, 
+      // ou somamos tipos específicos se 'lead' não existir.
+      // Estratégia segura: Somar apenas 'lead' se existir, pois ele agrega. Se for 0, tentar os específicos.
+      
+      let totalLeads = 0;
+      
+      // Tenta achar o totalizador 'lead' primeiro (mais seguro para evitar dupla contagem)
+      const genericLead = allEvents.find(c => c.action_type === 'lead');
+      
+      if (genericLead) {
+         totalLeads = parseInt(genericLead.value || "0", 10);
+      } else {
+         // Se não tem o genérico, soma os específicos (ex: on_facebook_lead)
+         const specificLeads = allEvents.filter(c => 
+            validLeadTypes.includes(c.action_type) && c.action_type !== 'lead'
+         );
+         totalLeads = specificLeads.reduce((acc, curr) => acc + parseInt(curr.value || "0", 10), 0);
+      }
+
+      // LOG DE DIAGNÓSTICO SE HOUVER LEADS
+      if (totalLeads > 0) {
+        console.log(`[SUCESSO] Campanha: ${insight.campaign_name} | Leads encontrados: ${totalLeads}`);
+      }
+      // --------------------------------------------------
 
       const creativeDetails = creativeDetailsMap.get(insight.ad_id);
 
@@ -198,30 +207,6 @@ serve(async (req) => {
       };
     });
 
-    // ===== LOG 3: DADOS APÓS TRANSFORMAÇÃO =====
-    console.log("========================================");
-    console.log("[META-INSIGHTS] 3. DADOS APÓS TRANSFORMAÇÃO:");
-    
-    // Agrupa por campanha para ver totais
-    const campaignTotals: Record<string, { spend: number; leads: number; impressions: number; clicks: number; reach: number }> = {};
-    metricsToUpsert.forEach(m => {
-      const name = m.campaign_name || 'Sem Nome';
-      if (!campaignTotals[name]) {
-        campaignTotals[name] = { spend: 0, leads: 0, impressions: 0, clicks: 0, reach: 0 };
-      }
-      campaignTotals[name].spend += m.spend;
-      campaignTotals[name].leads += m.leads;
-      campaignTotals[name].impressions += m.impressions;
-      campaignTotals[name].clicks += m.clicks;
-      campaignTotals[name].reach += m.reach;
-    });
-    
-    console.log(JSON.stringify({
-      totalRecords: metricsToUpsert.length,
-      campaignTotals: campaignTotals
-    }, null, 2));
-    console.log("========================================");
-
     // Executa o "Upsert" no Supabase para evitar duplicidade
     // Usamos o índice único: user_id, campaign_name, ad_name, date
     const { error: upsertError } = await supabaseClient
@@ -232,12 +217,7 @@ serve(async (req) => {
       });
 
     if (upsertError) {
-      console.error("[META-INSIGHTS] Supabase Upsert Error:", JSON.stringify(upsertError));
-      // Log mais detalhado para debug
-      console.error("[META-INSIGHTS] Primeiro registro que falhou:", JSON.stringify(metricsToUpsert[0]));
-      // Não lançamos erro, continuamos para retornar os dados
-    } else {
-      console.log("[META-INSIGHTS] Upsert realizado com sucesso. Registros:", metricsToUpsert.length);
+      console.error("Erro Upsert:", upsertError);
     }
 
     // Prepara os dados para retornar ao frontend no formato esperado pelo hook
@@ -251,8 +231,7 @@ serve(async (req) => {
     const totalLeads = metricsToUpsert.reduce((sum, m) => sum + m.leads, 0);
 
     const kpis = {
-      investido: totalSpent,
-      leads: totalLeads,
+      investido: totalSpent, leads: totalLeads
     };
 
     const channelsData = [{
@@ -260,15 +239,7 @@ serve(async (req) => {
         value: totalSpent
     }];
 
-    // ===== LOG 4: RESPOSTA FINAL =====
-    console.log("========================================");
-    console.log("[META-INSIGHTS] 4. RESPOSTA FINAL ENVIADA:");
-    console.log(JSON.stringify({
-      totalAds: adsData.length,
-      kpis,
-      channelsData
-    }, null, 2));
-    console.log("========================================");
+    console.log("[META-INSIGHTS] FINALIZADO. Leads Totais:", totalLeads);
 
     return new Response(
       JSON.stringify({ adsData, kpis, channelsData }),
@@ -276,7 +247,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("[META-INSIGHTS] ERRO GERAL:", error.message);
+    console.error("[META-INSIGHTS] ERRO FATAL:", error.message);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1,22 +1,18 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { DateRange } from "react-day-picker";
 import { useNavigate, useLocation } from "react-router-dom";
 import { subDays } from "date-fns";
-import { FileDown, Zap, Loader2, MessageSquare, BrainCircuit, CalendarDays, Users, Target, LayoutDashboard, BarChart3, Image } from "lucide-react";
+import { FileDown, Zap, Loader2 } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
 import Sidebar from "@/components/dashboard/Sidebar";
 import BottomNav from "@/components/dashboard/BottomNav";
 import MobileHeader from "@/components/dashboard/MobileHeader";
-import ProjectCard from "@/components/dashboard/ProjectCard";
 import APISettings from "@/components/settings/APISettings";
-import CRMUpload from "@/components/crm/CRMUpload";
-import LeadsTable from "@/components/crm/LeadsTable";
 import AIChatPanel from "@/components/dashboard/AIChatPanel";
-import MetricsUpload from "@/components/dashboard/MetricsUpload";
 import OverviewView from "@/components/dashboard/OverviewView";
-import CampaignView from "@/components/dashboard/CampaignView";
+import { CampaignView } from "@/components/dashboard/CampaignView";
 import CreativeView from "@/components/dashboard/CreativeView";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -33,7 +29,7 @@ const Dashboard = () => {
   const isMobile = useIsMobile();
   const [user, setUser] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const [crmRefresh, setCrmRefresh] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [selectedProject, setSelectedProject] = useState("all");
@@ -54,17 +50,26 @@ const Dashboard = () => {
     // Update currentPage based on URL changes
     const path = location.pathname.split('/')[1] || 'dashboard';
     setCurrentPage(path);
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
-  const { 
-    campaignPerformance = [], 
-    kpis = { investido: 0, totalLeadsCRM: 0, totalLeadsMeta: 0, cplReal: 0, cplMeta: 0, roiReal: 0 }, 
-    funnelData = [], 
-    adsData = [], 
-    isLoading, 
-    isUsingMockData,
-    refetch: loadDashboardData, // Renamed to loadDashboardData for clarity
-  } = useDashboardData(user?.id || "", date, toast, selectedProject); // Pass selectedProject to the hook
+  const { data: campaignPerformance, isLoading, kpis } = useDashboardData(date, refreshTrigger);
+
+  // Data for other views that are not yet updated by the new hook
+  const funnelData: any[] = []; 
+  const adsData: any[] = [];
+
+  const overviewKpis = {
+    spend: kpis.investido,
+    impressions: kpis.impressions,
+    clicks: kpis.clicks,
+    leads: kpis.leads,
+    ctr: kpis.ctr,
+    cpc: kpis.cpc,
+    cpm: kpis.impressions > 0 ? (kpis.investido / kpis.impressions) * 1000 : 0,
+    cpl: kpis.cpl,
+    reach: kpis.reach,
+    frequency: kpis.impressions > 0 && kpis.reach > 0 ? kpis.impressions / kpis.reach : 0,
+  };
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -84,7 +89,7 @@ const Dashboard = () => {
     }
   };
 
-  if (!user || isLoading) {
+  if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#0f172a]">
         <Loader2 className="h-8 w-8 animate-spin text-[#f90f54]" />
@@ -102,19 +107,13 @@ const Dashboard = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile Header */}
         {isMobile ? (
-          <MobileHeader date={date} setDate={setDate} isUsingMockData={isUsingMockData} />
+          <MobileHeader date={date} setDate={setDate} isUsingMockData={false} />
         ) : (
           /* Desktop Header */
           <header className="h-20 flex-shrink-0 flex items-center justify-between px-8 border-b border-slate-800/50 bg-[#0f172a]/80 backdrop-blur-xl z-20">
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold tracking-tighter text-white">REAL <span className="text-[#f90f54]">ROI HUB</span></h1>
-                <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/50 rounded-full border border-slate-700/50">
-                  <span className={`w-2 h-2 rounded-full animate-pulse ${isUsingMockData ? 'bg-red-500' : 'bg-green-500'}`}></span>
-                  <span className="text-[10px] uppercase font-bold text-slate-400">
-                    API Status: {isUsingMockData ? 'Offline' : 'Live'}
-                  </span>
-                </div>
               </div>
             </div>
             
@@ -123,8 +122,8 @@ const Dashboard = () => {
                 <>
                   <Button 
                     onClick={() => {
-                      toast({ title: "Sincronizando dados em tempo real..." });
-                      loadDashboardData();
+                      toast({ title: "Atualizando dados..." });
+                      setRefreshTrigger(p => p + 1);
                     }}
                     disabled={isLoading}
                     variant="outline"
@@ -139,7 +138,7 @@ const Dashboard = () => {
                       <SelectValue placeholder="Selecionar Projeto" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
-                      <SelectItem value="all">Todos os Projetos</SelectItem>
+                      <SelectItem value="all">Todas as Campanhas</SelectItem>
                       {campaignPerformance?.map((p: any) => (
                         <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
                       ))}
@@ -169,12 +168,12 @@ const Dashboard = () => {
                 </TabsList>
                 <TabsContent value="overview" className="space-y-4">
                   <OverviewView
-                    kpis={kpis}
+                    kpis={overviewKpis}
                     funnelData={funnelData}
                   />
                 </TabsContent>
                 <TabsContent value="campaigns">
-                  <CampaignView campaigns={campaignPerformance || []} />
+                  <CampaignView data={campaignPerformance || []} isLoading={isLoading} />
                 </TabsContent>
                 <TabsContent value="creatives">
                   <CreativeView creatives={adsData || []} />
@@ -189,7 +188,13 @@ const Dashboard = () => {
 
       {/* Mobile Bottom Navigation */}
       {isMobile && user && (
-        <BottomNav onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} />
+        <BottomNav onNavigate={(page) => {
+          if (page === 'chat') {
+            setShowAIChat(true);
+          } else {
+            navigate(`/${page}`);
+          }
+        }} />
       )}
 
       {showAIChat && (
@@ -197,7 +202,7 @@ const Dashboard = () => {
           onClose={() => setShowAIChat(false)}
           user={user}
           dashboardContext={JSON.stringify({ 
-            kpis: kpis, 
+            kpis: overviewKpis, 
             performance: campaignPerformance, 
             funnel: funnelData 
           })}
