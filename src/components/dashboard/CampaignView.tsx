@@ -3,7 +3,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface CampaignData {
-  campaign_name: string;
+  name?: string;
+  campaign_name?: string;
   ad_set_name?: string;
   spend: number;
   impressions: number;
@@ -13,6 +14,7 @@ interface CampaignData {
   cpm: number;
   cpc: number;
   leads: number;
+  leadsMeta?: number;
   cpl: number;
 }
 
@@ -122,7 +124,7 @@ const CampaignView = ({ campaigns = [] }: CampaignViewProps) => {
               {sortedCampaigns.map((campaign, i) => (
                 <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors group">
                   <td className="font-medium text-slate-200 py-4">
-                    {campaign.campaign_name || 'Sem nome'}
+                    {campaign.name || campaign.campaign_name || 'Sem nome'}
                   </td>
                   <td className="text-right text-slate-300">
                     {formatNumber(campaign.spend, 'currency')}

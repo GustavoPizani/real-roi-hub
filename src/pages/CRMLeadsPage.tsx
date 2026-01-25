@@ -73,7 +73,7 @@ const CRMLeadsPage = () => {
       </div>
 
       {isMobile && (
-        <BottomNav />
+        <BottomNav onNavigate={() => {}} />
       )}
     </div>
   );

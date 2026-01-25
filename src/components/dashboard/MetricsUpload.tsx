@@ -187,14 +187,21 @@ const MetricsUpload = ({ userId, onUploadComplete }: MetricsUploadProps) => {
             ...m,
           }));
 
+          console.log('[MetricsUpload] Inserindo', dataToInsert.length, 'registros no banco');
+          console.log('[MetricsUpload] Primeiro registro:', dataToInsert[0]);
+
           const { error } = await supabase
             .from('campaign_metrics')
             .upsert(dataToInsert, { 
-              onConflict: 'user_id,campaign_name,date',
+              // Usa a constraint única: user_id + campaign_name + ad_name + date
+              onConflict: 'user_id,campaign_name,ad_name,date',
               ignoreDuplicates: false 
             });
 
-          if (error) throw error;
+          if (error) {
+            console.error('[MetricsUpload] Erro no upsert:', error);
+            throw error;
+          }
 
           setUploadStats({ total: rows.length, success: metrics.length });
           toast({
