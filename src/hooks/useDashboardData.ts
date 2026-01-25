@@ -86,7 +86,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
       return [];
     }
     if (selectedCampaignFilter && selectedCampaignFilter !== "all") {
-      const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
+      const normalize = (name: string) => (name || "Sem Campanha").trim().replace(/\s+/g, ' ');
       return metrics.filter(metric => normalize(metric.campaign_name) === normalize(selectedCampaignFilter));
     }
     return metrics || [];
@@ -158,7 +158,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
       setData(prev => ({ ...prev, isLoading: true }));
 
       // Função auxiliar para normalizar nomes e evitar duplicidade por erro de digitação
-      const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
+      const normalize = (name: string) => (name || "Sem Campanha").trim().replace(/\s+/g, ' ');
 
       try {
         const [crmLeads, decryptedSettings] = await Promise.all([
@@ -254,7 +254,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           ...c,
           spend: parseMetric(c.spend),
           leads: parseMetric(c.leads),
-          cpl: parseMetric(c.leads) > 0 ? parseMetric(c.spend) / parseMetric(c.leads) : 0,
+          cpl: parseMetric(c.leads) > 0 ? Math.round((parseMetric(c.spend) / parseMetric(c.leads)) * 100) / 100 : 0,
           ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
         })).sort((a, b) => b.spend - a.spend);
 
@@ -265,7 +265,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         // Passo A: Agrega dados da tabela campaign_metrics (fonte de dados de performance)
         (creativeMetrics || []).forEach(metric => {
           console.log(`Somando para Campanha '${normalize(metric.campaign_name)}': Spend: ${metric.spend}, Leads: ${metric.leads}, Clicks: ${metric.clicks}`);
-          const name = normalize(metric.campaign_name);
+          const name = normalize(metric.campaign_name || metric.ad_name);
           if (!campaignsMapForPerformance[name]) {
             campaignsMapForPerformance[name] = { 
               name, 
@@ -307,8 +307,8 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         // Passo C: Transforma o Objeto em Array e calcula métricas finais
         let campaignPerformance = Object.values(campaignsMapForPerformance).map((m: any) => ({
           ...m,
-          cplReal: m.leads > 0 ? m.spend / m.leads : 0,
-          cplMeta: m.leadsMeta > 0 ? m.spend / m.leadsMeta : 0,
+          cplReal: m.leads > 0 ? Math.round((m.spend / m.leads) * 100) / 100 : 0,
+          cplMeta: m.leadsMeta > 0 ? Math.round((m.spend / m.leadsMeta) * 100) / 100 : 0,
           cpc: m.clicks > 0 ? m.spend / m.clicks : 0,
           ctr: m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0,
           cpm: m.impressions > 0 ? (m.spend / m.impressions) * 1000 : 0,
@@ -322,7 +322,8 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         }
         
         // --- 4. KPIs SUPERIORES (Sincronizados) ---
-        const totalMetrics = (creativeMetrics || []).reduce((acc, m) => {
+        const filteredMetrics = (creativeMetrics || []).filter(m => !selectedCampaignFilter || selectedCampaignFilter === 'all' || normalize(m.campaign_name) === normalize(selectedCampaignFilter));
+        const totalMetrics = filteredMetrics.reduce((acc, m) => {
           acc.spend += parseMetric(m.spend);
           acc.impressions += parseMetric(m.impressions);
           acc.clicks += parseMetric(m.clicks);
@@ -350,9 +351,9 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
 
         // Cálculos de CPL (já filtrados)
         // Use leadsMeta para o CPL das campanhas (Meta)
-        const cplMeta = totalMetrics.leadsMeta > 0 ? investment / totalMetrics.leadsMeta : 0;
+        const cplMeta = totalMetrics.leadsMeta > 0 ? Math.round((investment / totalMetrics.leadsMeta) * 100) / 100 : 0;
         // Use leadsCRM para o CPL Real (Financeiro)
-        const cplReal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
+        const cplReal = totalLeadsCRM > 0 ? Math.round((investment / totalLeadsCRM) * 100) / 100 : 0;
 
         // --- 5. FUNIL WATERFALL (Sincronizado com CRM) ---
         const waterfallData = [ // This should use the filtered CRM leads

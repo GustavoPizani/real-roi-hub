@@ -134,11 +134,11 @@ serve(async (req) => {
 
     // Mapeia os dados da API para o formato da tabela 'campaign_metrics'
     const metricsToUpsert = allInsights.map((insight) => {
-      // Busca específica por leads no array de conversões
-      const leadActions = insight.conversions?.find(c => 
-        ['lead', 'offsite_conversion.fb_pixel_lead', 'contact'].includes(c.action_type)
+      // Filtra por múltiplos tipos de leads e soma os valores
+      const leadActions = insight.conversions?.filter(c => 
+        ['lead', 'offsite_conversion.fb_pixel_lead', 'contact', 'leadgen_grouped'].includes(c.action_type)
       );
-      const totalLeads = parseInt(leadActions?.value || "0", 10);
+      const totalLeads = leadActions?.reduce((acc, curr) => acc + parseInt(curr.value || "0", 10), 0) || 0;
 
       const creativeDetails = creativeDetailsMap.get(insight.ad_id);
 
@@ -182,7 +182,7 @@ serve(async (req) => {
 
     // Prepara os dados para retornar ao frontend no formato esperado pelo hook
     const adsData = metricsToUpsert.map(m => ({
-      campaign_name: m.campaign_name,
+      campaign_name: m.campaign_name, // Garante consistência da chave (snake_case)
       spend: m.spend,
       conversions: m.leads,
     }));
