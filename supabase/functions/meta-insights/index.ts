@@ -182,7 +182,7 @@ serve(async (req) => {
 
     // Prepara os dados para retornar ao frontend no formato esperado pelo hook
     const adsData = metricsToUpsert.map(m => ({
-      campaignName: m.campaign_name,
+      campaign_name: m.campaign_name,
       spend: m.spend,
       conversions: m.leads,
     }));

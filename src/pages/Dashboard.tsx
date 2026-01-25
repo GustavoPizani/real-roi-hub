@@ -63,25 +63,8 @@ const Dashboard = () => {
     adsData = [], 
     isLoading, 
     isUsingMockData,
-    refetch: loadDashboardData,
-  } = useDashboardData(user?.id || "", date, toast);
-
-  const displayedData = useMemo(() => {
-    if (selectedProject === "all") return { kpis, campaignPerformance };
-    const project = campaignPerformance.find((p: any) => p.name === selectedProject);
-    if (!project) return { kpis, campaignPerformance };
-    return {
-      kpis: {
-        investido: project.spent,
-        totalLeadsCRM: project.leads,
-        totalLeadsMeta: project.leadsMeta,
-        cplReal: project.cplReal,
-        cplMeta: project.cplMeta,
-        roiReal: kpis.roiReal,
-      },
-      campaignPerformance: [project]
-    };
-  }, [selectedProject, kpis, campaignPerformance]);
+    refetch: loadDashboardData, // Renamed to loadDashboardData for clarity
+  } = useDashboardData(user?.id || "", date, toast, selectedProject); // Pass selectedProject to the hook
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -179,22 +162,22 @@ const Dashboard = () => {
             
             {currentPage === "dashboard" ? (
               <Tabs defaultValue="overview" className="space-y-4">
-                <TabsList>
+                <TabsList className="bg-slate-800/50">
                   <TabsTrigger value="overview">Visão Geral</TabsTrigger>
                   <TabsTrigger value="campaigns">Campanhas</TabsTrigger>
                   <TabsTrigger value="creatives">Criativos</TabsTrigger>
                 </TabsList>
                 <TabsContent value="overview" className="space-y-4">
                   <OverviewView
-                    kpis={displayedData.kpis}
-                    campaignPerformance={displayedData.campaignPerformance}
+                    kpis={kpis} // Use kpis directly from the hook
+                    campaignPerformance={campaignPerformance} // Use campaignPerformance directly from the hook
                     funnelData={funnelData}
                     isMobile={isMobile}
                   />
                 </TabsContent>
                 <TabsContent value="campaigns">
-                  <CampaignView
-                    campaigns={displayedData.campaignPerformance || []}
+                  <CampaignView 
+                    campaigns={campaignPerformance || []} // Use campaignPerformance directly from the hook
                     isMobile={isMobile}
                   />
                 </TabsContent>
@@ -219,8 +202,8 @@ const Dashboard = () => {
           onClose={() => setShowAIChat(false)}
           user={user}
           dashboardContext={JSON.stringify({ 
-            kpis: displayedData.kpis, 
-            performance: displayedData.campaignPerformance, 
+            kpis: kpis, 
+            performance: campaignPerformance, 
             funnel: funnelData 
           })}
         />

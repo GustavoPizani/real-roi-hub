@@ -8,8 +8,8 @@ interface Ad {
   impressions: number;
   clicks: number;
   spend: number;
-  conversions: number;
-  costPerResult: number;
+  leads: number; // Changed from conversions
+  cpl: number; // Added cpl
 }
 
 interface AdsTableProps {
@@ -29,7 +29,7 @@ const AdsTable = ({ ads, title }: AdsTableProps) => {
               <TableHead className="text-muted-foreground text-right">Impressões</TableHead>
               <TableHead className="text-muted-foreground text-right">Cliques</TableHead>
               <TableHead className="text-muted-foreground text-right">Gasto</TableHead>
-              <TableHead className="text-muted-foreground text-right">Conversões</TableHead>
+              <TableHead className="text-muted-foreground text-right">Leads</TableHead>
               <TableHead className="text-muted-foreground text-right">CPR</TableHead>
             </TableRow>
           </TableHeader>
@@ -67,12 +67,12 @@ const AdsTable = ({ ads, title }: AdsTableProps) => {
                   R$ {ad.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Badge className="bg-neon-green/20 text-neon-green border-neon-green/30">
-                    {ad.conversions}
+                  <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                    {ad.leads}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm text-primary">
-                  R$ {ad.costPerResult.toFixed(2)}
+                  R$ {ad.cpl.toFixed(2)}
                 </TableCell>
               </TableRow>
             ))}

@@ -43,7 +43,7 @@ const parseMetric = (value: any): number => {
   return isNaN(num) ? 0 : num;
 };
 
-export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: any) => {
+export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: any, selectedCampaignFilter?: string) => {
   const internalToast = useToast();
   const [data, setData] = useState<any>({
     temporalData: [],
@@ -57,7 +57,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
     error: null,
   });
 
-  const fetchAPISettings = useCallback(async () => {
+  const fetchAPISettings = useCallback(async () => { // No changes needed here
     if (!userId) return null;
     const { data: settings } = await supabase.from("api_settings").select("*").eq("user_id", userId);
     const decrypted: Record<string, string> = {};
@@ -65,7 +65,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
     return decrypted;
   }, [userId]);
 
-  const fetchCRMData = useCallback(async () => {
+  const fetchCRMData = useCallback(async () => { // No changes needed here
     if (!userId) return null;
     let query = supabase.from("crm_leads").select("*").eq("user_id", userId);
     if (dateRange?.from) query = query.gte("cadastro", dateRange.from.toISOString());
@@ -73,8 +73,8 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
     const { data: leads } = await query;
     return leads || [];
   }, [userId, dateRange]);
-
-  const fetchLocalMetricsData = useCallback(async () => {
+  
+  const fetchLocalMetricsData = useCallback(async (selectedCampaignFilter?: string) => {
     if (!userId) return [];
     console.log("Buscando dados da tabela local 'campaign_metrics' como fallback.");
     let query = supabase.from("campaign_metrics").select("*").eq("user_id", userId);
@@ -85,17 +85,21 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
       console.error("Erro ao buscar métricas locais como fallback:", error.message);
       return [];
     }
+    if (selectedCampaignFilter && selectedCampaignFilter !== "all") {
+      const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
+      return metrics.filter(metric => normalize(metric.campaign_name) === normalize(selectedCampaignFilter));
+    }
     return metrics || [];
   }, [userId, dateRange]);
 
-  const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[]) => {
+  const fetchMetaData = useCallback(async (accessToken: string, adAccountIds: string[], selectedCampaignFilter?: string) => {
     const since = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
     const until = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
     const results = await Promise.all(
       adAccountIds.map(async (id) => {
         try {
           const { data, error } = await supabase.functions.invoke("meta-insights", {
-            body: { accessToken, adAccountId: id.trim(), since, until },
+            body: { accessToken, adAccountId: id.trim(), since, until, selectedCampaign: selectedCampaignFilter },
           });
 
           console.log(`Retorno da Edge Function para a conta ${id.trim()}:`, data);
@@ -121,7 +125,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
     let totalSpent = 0;
     const channels: any[] = [];
 
-    results.forEach(res => {
+    results.forEach(res => { // No changes needed here, filtering happens in edge function
       if (res) {
         ads.push(...(res.adsData || []));
         totalSpent += res.kpis?.investido || 0;
@@ -130,7 +134,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
     });
     return { ads, totalSpent, channels };
   }, [dateRange, toast, internalToast.toast]);
-
+  
   const loadDashboardData = useCallback(async () => {
       // Definição das datas no topo para garantir que existam antes de qualquer query.
       const startDate = dateRange?.from ?? subDays(new Date(), 29);
@@ -152,6 +156,9 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
       }
 
       setData(prev => ({ ...prev, isLoading: true }));
+
+      // Função auxiliar para normalizar nomes e evitar duplicidade por erro de digitação
+      const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
 
       try {
         const [crmLeads, decryptedSettings] = await Promise.all([
@@ -176,8 +183,8 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         if (accessToken && adAccountIds.length > 0) {
           try {
             console.log("Priorizando API da Meta para dados em tempo real...");
-            const apiResponse = await fetchMetaData(accessToken, adAccountIds);
-            if (!apiResponse) throw new Error("A API da Meta não retornou dados.");
+            const apiResponse = await fetchMetaData(accessToken, adAccountIds, selectedCampaignFilter);
+            if (!apiResponse || !apiResponse.ads) throw new Error("A API da Meta não retornou dados.");
             metaInfo = apiResponse;
             isUsingApi = true;
             console.log("Dados da API da Meta carregados com sucesso.");
@@ -186,8 +193,8 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           }
         }
         
-        if (!isUsingApi) {
-          const localMetrics = await fetchLocalMetricsData();
+        if (!isUsingApi || !metaInfo.ads || metaInfo.ads.length === 0) {
+          const localMetrics = await fetchLocalMetricsData(selectedCampaignFilter);
           const campaignsMap: Record<string, any> = {};
           (localMetrics || []).forEach(metric => {
             const name = normalize(metric.campaign_name);
@@ -203,12 +210,16 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         }
 
         // --- SINCRONIZAÇÃO DE CRIATIVOS (VEM DA TABELA) ---
-        const { data: creativeMetrics, error: creativeMetricsError } = await supabase
+        let { data: creativeMetrics, error: creativeMetricsError } = await supabase
           .from("campaign_metrics")
           .select("campaign_name, ad_id, ad_name, creative_id, creative_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks, reach, frequency")
           .eq("user_id", userId)
           .gte("date", format(startDate, "yyyy-MM-dd"))
           .lte("date", format(endDate, "yyyy-MM-dd"));
+
+        if (selectedCampaignFilter && selectedCampaignFilter !== "all") {
+          creativeMetrics = creativeMetrics.filter(metric => normalize(metric.campaign_name) === normalize(selectedCampaignFilter));
+        }
 
         console.log('Dados brutos do banco (campaign_metrics):', creativeMetrics);
 
@@ -222,6 +233,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           if (!key) return;
 
           if (!creativesMap[key]) {
+            // Ensure campaign_name is included for filtering if needed
             creativesMap[key] = {
               creative_id: metric.ad_id,
               name: metric.ad_name,
@@ -229,6 +241,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
               spend: 0, leads: 0, impressions: 0, clicks: 0,
             };
           }
+          creativesMap[key].campaign_name = metric.campaign_name; // Add campaign_name to creative map
           
           // GARANTIA: Soma os leads garantindo que sejam números
           creativesMap[key].spend += parseMetric(metric.spend);
@@ -237,7 +250,7 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           creativesMap[key].clicks += parseMetric(metric.clicks);
         });
 
-        const adsData = Object.values(creativesMap).map((c: any) => ({
+        let adsData = Object.values(creativesMap).map((c: any) => ({
           ...c,
           spend: parseMetric(c.spend),
           leads: parseMetric(c.leads),
@@ -245,18 +258,16 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
         })).sort((a, b) => b.spend - a.spend);
 
-        // --- 3. PERFORMANCE POR PROJETO (UNIFICAÇÃO TOTAL) ---
-        const campaignsMap: Record<string, any> = {};
 
-        // Função auxiliar para normalizar nomes e evitar duplicidade por erro de digitação
-        const normalize = (name: string) => (name || "Sem Campanha").toUpperCase().trim().replace(/\s+/g, ' ');
+        // --- 3. PERFORMANCE POR PROJETO (UNIFICAÇÃO TOTAL) ---
+        const campaignsMapForPerformance: Record<string, any> = {};
 
         // Passo A: Agrega dados da tabela campaign_metrics (fonte de dados de performance)
         (creativeMetrics || []).forEach(metric => {
           console.log(`Somando para Campanha '${normalize(metric.campaign_name)}': Spend: ${metric.spend}, Leads: ${metric.leads}, Clicks: ${metric.clicks}`);
           const name = normalize(metric.campaign_name);
-          if (!campaignsMap[name]) {
-            campaignsMap[name] = { 
+          if (!campaignsMapForPerformance[name]) {
+            campaignsMapForPerformance[name] = { 
               name, 
               spend: 0, 
               leads: 0, // CRM leads
@@ -267,34 +278,34 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
               sales: 0 
             };
           }
-          campaignsMap[name].spend += parseMetric(metric.spend);
-          campaignsMap[name].leadsMeta += parseMetric(metric.leads);
-          campaignsMap[name].impressions += parseMetric(metric.impressions);
-          campaignsMap[name].clicks += parseMetric(metric.clicks);
+          campaignsMapForPerformance[name].spend += parseMetric(metric.spend);
+          campaignsMapForPerformance[name].leadsMeta += parseMetric(metric.leads);
+          campaignsMapForPerformance[name].impressions += parseMetric(metric.impressions);
+          campaignsMapForPerformance[name].clicks += parseMetric(metric.clicks);
         });
 
         // Passo B: Agrega dados do CRM (Mesmo que a campanha não tenha gasto na Meta no período)
         crmLeads?.forEach((lead: any) => {
           const name = normalize(lead.campanha_nome);
           
-          if (!campaignsMap[name]) {
-            campaignsMap[name] = { name, spend: 0, leads: 0, leadsMeta: 0, impressions: 0, clicks: 0, qualified: 0, sales: 0 };
+          if (!campaignsMapForPerformance[name]) {
+            campaignsMapForPerformance[name] = { name, spend: 0, leads: 0, leadsMeta: 0, impressions: 0, clicks: 0, qualified: 0, sales: 0 };
           }
           
-          campaignsMap[name].leads += 1;
+          campaignsMapForPerformance[name].leads += 1;
           const status = (lead.situacao_atendimento || '').toLowerCase();
           
           // Contabilização de leads qualificados e vendas conforme status do CRM
           if (['schedule', 'visita', 'proposta', 'purchase', 'venda', 'submitapplication'].some(s => status.includes(s))) {
-            campaignsMap[name].qualified += 1;
+            campaignsMapForPerformance[name].qualified += 1;
           }
           if (status.includes('venda') || status.includes('purchase')) {
-            campaignsMap[name].sales += 1;
+            campaignsMapForPerformance[name].sales += 1;
           }
         });
 
         // Passo C: Transforma o Objeto em Array e calcula métricas finais
-        const campaignPerformance = Object.values(campaignsMap).map((m: any) => ({
+        let campaignPerformance = Object.values(campaignsMapForPerformance).map((m: any) => ({
           ...m,
           cplReal: m.leads > 0 ? m.spend / m.leads : 0,
           cplMeta: m.leadsMeta > 0 ? m.spend / m.leadsMeta : 0,
@@ -305,7 +316,11 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
           status: m.leads > 0 && (m.qualified / m.leads) > 0.25 ? 'OTIMIZADO' : 
                   m.leads > 0 && (m.qualified / m.leads) > 0.15 ? 'ESTÁVEL' : 'REVISAR'
         })).sort((a, b) => b.spend - a.spend); // Ordena pelas campanhas que mais gastaram
-
+        
+        if (selectedCampaignFilter && selectedCampaignFilter !== "all") {
+          campaignPerformance = campaignPerformance.filter(campaign => normalize(campaign.name) === normalize(selectedCampaignFilter));
+        }
+        
         // --- 4. KPIs SUPERIORES (Sincronizados) ---
         const totalMetrics = (creativeMetrics || []).reduce((acc, m) => {
           acc.spend += parseMetric(m.spend);
@@ -322,24 +337,27 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         const avgFrequency = totalMetrics.impressions > 0 ? totalMetrics.freqSum / totalMetrics.impressions : 0;
 
         // Métrica Real vinda do CRM
-        const totalLeadsCRM = crmLeads?.length || 0;
-        const totalSalesCRM = crmLeads?.filter(l => l.situacao_atendimento?.toLowerCase().includes('venda')).length || 0;
+        const filteredCrmLeads = crmLeads?.filter(lead =>
+          !selectedCampaignFilter || selectedCampaignFilter === "all" || normalize(lead.campanha_nome) === normalize(selectedCampaignFilter)
+        ) || [];
 
-        // Cálculos de CPL
+        const totalLeadsCRM = filteredCrmLeads.length || 0;
+        const totalSalesCRM = filteredCrmLeads.filter(l => l.situacao_atendimento?.toLowerCase().includes('venda')).length || 0;
+
+        const totalVisitsCRM = filteredCrmLeads.filter(l =>
+          ['schedule', 'visita'].some(s => l.situacao_atendimento?.toLowerCase().includes(s))
+        ).length || 0;
+
+        // Cálculos de CPL (já filtrados)
         // Use leadsMeta para o CPL das campanhas (Meta)
         const cplMeta = totalMetrics.leadsMeta > 0 ? investment / totalMetrics.leadsMeta : 0;
         // Use leadsCRM para o CPL Real (Financeiro)
         const cplReal = totalLeadsCRM > 0 ? investment / totalLeadsCRM : 0;
 
         // --- 5. FUNIL WATERFALL (Sincronizado com CRM) ---
-        const totalVisitsCRM = crmLeads?.filter(l => 
-          l.situacao_atendimento?.toLowerCase().includes('schedule') || 
-          l.situacao_atendimento?.toLowerCase().includes('visita')
-        ).length || 0;
-
-        const waterfallData = [
+        const waterfallData = [ // This should use the filtered CRM leads
           { name: 'LEADS META', value: totalLeadsMeta, percentage: 100, color: 'bg-blue-600' },
-          { name: 'LEADS CRM', value: totalLeadsCRM, percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-[#f90f54]' },
+          { name: 'LEADS CRM', value: totalLeadsCRM, percentage: totalLeadsMeta > 0 ? (totalLeadsCRM / totalLeadsMeta) * 100 : 0, color: 'bg-[#f90f54]' },
           { name: 'VISITAS', value: totalVisitsCRM, percentage: totalLeadsCRM > 0 ? (totalVisitsCRM / totalLeadsCRM) * 100 : 0, color: 'bg-blue-400' },
           { name: 'VENDAS', value: totalSalesCRM, percentage: totalLeadsCRM > 0 ? (totalSalesCRM / totalLeadsCRM) * 100 : 0, color: 'bg-green-500' }
         ];
@@ -369,14 +387,14 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         });
 
       } catch (error: any) {
-        console.error("Erro Dashboard Data:", error);
+        console.error("Erro ao carregar dados do Dashboard:", error);
         setData(prev => ({ ...prev, isLoading: false, error: "Erro ao processar dados do dashboard." }));
       }
-    }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData, fetchLocalMetricsData, toast, internalToast.toast]);
+    }, [userId, dateRange, fetchAPISettings, fetchCRMData, fetchMetaData, fetchLocalMetricsData, toast, internalToast.toast, selectedCampaignFilter]);
 
   useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+    loadDashboardData(); // This will now be called when selectedCampaignFilter changes
+  }, [loadDashboardData]); // loadDashboardData is memoized and its dependency array includes selectedCampaignFilter
 
   return {
     ...data,
