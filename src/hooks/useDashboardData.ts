@@ -210,14 +210,15 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         }
 
         // --- SINCRONIZAÇÃO DE CRIATIVOS (VEM DA TABELA) ---
+        // Nota: Usamos ad_name e creative_name como identificadores (não ad_id/creative_id)
         let { data: creativeMetrics, error: creativeMetricsError } = await supabase
           .from("campaign_metrics")
-          .select("campaign_name, ad_id, ad_name, creative_id, creative_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks, reach, frequency")
+          .select("campaign_name, ad_set_name, ad_name, creative_name, thumbnail_url, spend, leads, cpl, ctr, impressions, clicks, reach, frequency")
           .eq("user_id", userId)
           .gte("date", format(startDate, "yyyy-MM-dd"))
           .lte("date", format(endDate, "yyyy-MM-dd"));
 
-        if (selectedCampaignFilter && selectedCampaignFilter !== "all") {
+        if (selectedCampaignFilter && selectedCampaignFilter !== "all" && creativeMetrics) {
           creativeMetrics = creativeMetrics.filter(metric => normalize(metric.campaign_name) === normalize(selectedCampaignFilter));
         }
 
@@ -229,23 +230,23 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
 
         const creativesMap: Record<string, any> = {};
         (creativeMetrics || []).forEach(metric => {
-          const key = metric.ad_id || metric.creative_id || metric.ad_name;
-          if (!key) return;
+          // Usa ad_name ou creative_name como chave única
+          const key = metric.ad_name || metric.creative_name || 'unknown';
+          if (key === 'unknown') return;
 
           if (!creativesMap[key]) {
-            // Ensure campaign_name is included for filtering if needed
             creativesMap[key] = {
-              creative_id: metric.ad_id,
-              name: metric.ad_name,
+              creative_id: key,
+              name: metric.ad_name || metric.creative_name,
               thumbnail_url: metric.thumbnail_url,
+              campaign_name: metric.campaign_name,
               spend: 0, leads: 0, impressions: 0, clicks: 0,
             };
           }
-          creativesMap[key].campaign_name = metric.campaign_name; // Add campaign_name to creative map
           
-          // GARANTIA: Soma os leads garantindo que sejam números
+          // Soma as métricas garantindo que sejam números
           creativesMap[key].spend += parseMetric(metric.spend);
-          creativesMap[key].leads += parseMetric(metric.leads); // Use 'leads' ou 'conversions' conforme seu banco
+          creativesMap[key].leads += parseMetric(metric.leads);
           creativesMap[key].impressions += parseMetric(metric.impressions);
           creativesMap[key].clicks += parseMetric(metric.clicks);
         });
@@ -264,8 +265,10 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
 
         // Passo A: Agrega dados da tabela campaign_metrics (fonte de dados de performance)
         (creativeMetrics || []).forEach(metric => {
-          console.log(`Somando para Campanha '${normalize(metric.campaign_name)}': Spend: ${metric.spend}, Leads: ${metric.leads}, Clicks: ${metric.clicks}`);
-          const name = normalize(metric.campaign_name || metric.ad_name);
+          const campaignName = metric.campaign_name || metric.ad_name || 'Sem Nome';
+          const name = normalize(campaignName);
+          console.log(`Somando para Campanha '${name}': Spend: ${metric.spend}, Leads: ${metric.leads}, Clicks: ${metric.clicks}`);
+          
           if (!campaignsMapForPerformance[name]) {
             campaignsMapForPerformance[name] = { 
               name, 
@@ -322,16 +325,24 @@ export const useDashboardData = (userId: string, dateRange?: DateRange, toast?: 
         }
         
         // --- 4. KPIs SUPERIORES (Sincronizados) ---
-        const filteredMetrics = (creativeMetrics || []).filter(m => !selectedCampaignFilter || selectedCampaignFilter === 'all' || normalize(m.campaign_name) === normalize(selectedCampaignFilter));
+        const filteredMetrics = (creativeMetrics || []).filter(m => {
+          const campaignName = m.campaign_name || 'Sem Nome';
+          return !selectedCampaignFilter || selectedCampaignFilter === 'all' || normalize(campaignName) === normalize(selectedCampaignFilter);
+        });
+        
+        console.log(`[KPIs] Filtro aplicado: ${selectedCampaignFilter || 'all'}, Métricas filtradas: ${filteredMetrics.length}`);
+        
         const totalMetrics = filteredMetrics.reduce((acc, m) => {
           acc.spend += parseMetric(m.spend);
           acc.impressions += parseMetric(m.impressions);
           acc.clicks += parseMetric(m.clicks);
           acc.leadsMeta += parseMetric(m.leads);
-          acc.reach += parseMetric(m.reach); // Novo: somando alcance
-          acc.freqSum += parseMetric(m.frequency) * parseMetric(m.impressions); // Para média ponderada
+          acc.reach += parseMetric(m.reach);
+          acc.freqSum += parseMetric(m.frequency) * parseMetric(m.impressions);
           return acc;
         }, { spend: 0, impressions: 0, clicks: 0, leadsMeta: 0, reach: 0, freqSum: 0 });
+
+        console.log('[KPIs] Totais calculados:', totalMetrics);
 
         const investment = totalMetrics.spend;
         const totalLeadsMeta = totalMetrics.leadsMeta;

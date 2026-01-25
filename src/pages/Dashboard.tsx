@@ -95,8 +95,8 @@ const Dashboard = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-[#0f172a] text-slate-200">
       {/* Desktop Sidebar */}
-      {!isMobile && user && ( // Pass user prop to Sidebar if needed, otherwise remove
-        <Sidebar onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} /> // onNavigate is still used for chat
+      {!isMobile && user && (
+        <Sidebar />
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -169,17 +169,12 @@ const Dashboard = () => {
                 </TabsList>
                 <TabsContent value="overview" className="space-y-4">
                   <OverviewView
-                    kpis={kpis} // Use kpis directly from the hook
-                    campaignPerformance={campaignPerformance} // Use campaignPerformance directly from the hook
+                    kpis={kpis}
                     funnelData={funnelData}
-                    isMobile={isMobile}
                   />
                 </TabsContent>
                 <TabsContent value="campaigns">
-                  <CampaignView 
-                    campaigns={campaignPerformance || []} // Use campaignPerformance directly from the hook
-                    isMobile={isMobile}
-                  />
+                  <CampaignView campaigns={campaignPerformance || []} />
                 </TabsContent>
                 <TabsContent value="creatives">
                   <CreativeView creatives={adsData || []} />
@@ -193,8 +188,8 @@ const Dashboard = () => {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      {isMobile && user && ( // Pass user prop to BottomNav if needed, otherwise remove
-        <BottomNav onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} /> // onNavigate is still used for chat
+      {isMobile && user && (
+        <BottomNav onNavigate={(page) => page === 'chat' ? setShowAIChat(true) : setCurrentPage(page)} />
       )}
 
       {showAIChat && (
