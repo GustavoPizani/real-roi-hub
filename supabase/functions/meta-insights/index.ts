@@ -2,13 +2,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Definição dos cabeçalhos CORS para permitir requisições de qualquer origem
+// Definição dos cabeçalhos CORS
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Interface atualizada para incluir 'actions'
+// Interface mantida
 interface Insight {
   campaign_id: string;
   campaign_name: string;
@@ -23,7 +23,6 @@ interface Insight {
   reach: string;
   cpc: string;
   ctr: string;
-  // O Meta pode mandar leads aqui (pixel) ou em actions (formulários)
   conversions?: { action_type: string; value: string }[];
   actions?: { action_type: string; value: string }[]; 
   inline_link_click_ctr?: string;
@@ -35,29 +34,29 @@ interface Insight {
 }
 
 serve(async (req) => {
-  // Trata a requisição pre-flight OPTIONS para CORS
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Extrai os parâmetros do corpo da requisição
     const requestBody = await req.json();
-    const { adAccountId, accessToken, since, until, selectedCampaign } = requestBody;
+    // Suporte para múltiplos IDs: aceita array ou string única
+    let { adAccountId, adAccountIds, accessToken, since, until } = requestBody;
+    
+    // Unifica para array
+    const accountsToProcess = adAccountIds || (adAccountId ? [adAccountId] : []);
 
     console.log("========================================");
-    console.log("[META-INSIGHTS] 1. INICIANDO SINCRONIZAÇÃO (MODO FORMULÁRIO):");
-    console.log(`Conta: ${adAccountId} | Periodo: ${since} a ${until}`);
+    console.log(`[META-INSIGHTS] INICIANDO PARALELO (${accountsToProcess.length} CONTAS)`);
+    console.log(`Período: ${since} a ${until}`);
     console.log("========================================");
 
-    // Cria um cliente Supabase com as permissões do usuário que fez a chamada
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: req.headers.get("Authorization")! } } }
     );
     
-    // Valida a sessão do usuário
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
       return new Response(JSON.stringify({ error: "Usuário não autenticado" }), {
@@ -66,120 +65,104 @@ serve(async (req) => {
       });
     }
 
-    // ADICIONADO 'actions' NA REQUISIÇÃO
     const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,reach,actions,conversions,cpc,ctr,inline_link_click_ctr,frequency';
-
     const time_range = JSON.stringify({ since, until });
 
-    let allInsights: Insight[] = [];
-    let url: string | undefined = `https://graph.facebook.com/v18.0/act_${adAccountId}/insights?level=ad&fields=${fields}&time_range=${time_range}&time_increment=1&access_token=${accessToken}&limit=500`;
+    // --- FUNÇÃO PARA PROCESSAR UMA ÚNICA CONTA ---
+    const processAccount = async (accountId: string) => {
+        let accountInsights: Insight[] = [];
+        let url: string | undefined = `https://graph.facebook.com/v18.0/act_${accountId.trim()}/insights?level=ad&fields=${fields}&time_range=${time_range}&time_increment=1&access_token=${accessToken}&limit=500`;
 
-    // Loop para lidar com a paginação da API da Meta
-    let pageCount = 0;
-    while (url) {
-      const response = await fetch(url);
-      const data = await response.json();
+        try {
+            while (url) {
+                const response = await fetch(url);
+                const data = await response.json();
 
-      if (!response.ok) {
-        console.error("[META-INSIGHTS] Erro API Meta:", JSON.stringify(data.error));
-        throw new Error(data.error?.message || "Falha ao consultar a API do Facebook.");
-      }
-      
-      allInsights.push(...data.data);
-      url = data.paging?.next;
-      pageCount++;
-    }    
-    // Batch fetch ad creative details (thumbnail_url e creative_id)
-    const adIds = allInsights.map(i => i.ad_id).filter(Boolean);
+                if (!response.ok) {
+                    console.error(`[ERRO CONTA ${accountId}]`, data.error?.message);
+                    return []; // Retorna vazio se falhar, não trava as outras
+                }
+                
+                if (data.data) accountInsights.push(...data.data);
+                url = data.paging?.next;
+            }
+            return accountInsights;
+        } catch (err) {
+            console.error(`[FALHA FATAL CONTA ${accountId}]`, err);
+            return [];
+        }
+    };
+
+    // --- PARALELISMO: Dispara todas as contas simultaneamente ---
+    const results = await Promise.all(accountsToProcess.map((id: string) => processAccount(id)));
+    const allInsights = results.flat(); // Junta tudo num array só
+
+    // --- LÓGICA DE THUMBNAILS (MANTIDA) ---
+    // Batch fetch ad creative details
+    const adIds = [...new Set(allInsights.map(i => i.ad_id).filter(Boolean))]; // Set para evitar duplicatas
     const creativeDetailsMap = new Map<string, { creative_id?: string; thumbnail_url?: string }>();
 
     if (adIds.length > 0) {
-      const batchRequests = adIds.map(adId => ({
-        method: 'GET',
-        relative_url: `${adId}?fields=creative{id,image_url,thumbnail_url}`
-      }));
-
-      const CHUNK_SIZE = 50;
-      for (let i = 0; i < batchRequests.length; i += CHUNK_SIZE) {
-        const chunk = batchRequests.slice(i, i + CHUNK_SIZE);
-        const batchUrl = `https://graph.facebook.com/v18.0?batch=${encodeURIComponent(JSON.stringify(chunk))}&access_token=${accessToken}&include_headers=false`;
-
-        try {
-          const batchRes = await fetch(batchUrl, { method: 'POST' });
-          const batchData = await batchRes.json();
-          if (batchRes.ok) {
-            batchData.forEach((item: any, index: number) => {
-              if (item.code === 200) {
-                const body = JSON.parse(item.body);
-                const creative = body.creative || body.adcreatives?.data?.[0];
-                if (creative) {
-                  creativeDetailsMap.set(adIds[i + index], {
-                    creative_id: creative.id,
-                    thumbnail_url: creative.image_url || creative.thumbnail_url
-                  });
+      // Divide em chunks maiores para acelerar (API batch aceita até 50 requisições)
+      const CHUNK_SIZE = 50; 
+      // Processa chunks de thumbnails em paralelo também para máxima velocidade
+      const thumbnailPromises = [];
+      
+      for (let i = 0; i < adIds.length; i += CHUNK_SIZE) {
+        const chunk = adIds.slice(i, i + CHUNK_SIZE);
+        const batchRequests = chunk.map(adId => ({
+            method: 'GET',
+            relative_url: `${adId}?fields=creative{id,image_url,thumbnail_url}`
+        }));
+        
+        const batchUrl = `https://graph.facebook.com/v18.0?batch=${encodeURIComponent(JSON.stringify(batchRequests))}&access_token=${accessToken}&include_headers=false`;
+        
+        thumbnailPromises.push(
+            fetch(batchUrl, { method: 'POST' })
+            .then(res => res.json())
+            .then(batchData => {
+                if (Array.isArray(batchData)) {
+                    batchData.forEach((item: any, idx: number) => {
+                        if (item.code === 200) {
+                            const body = JSON.parse(item.body);
+                            const creative = body.creative || body.adcreatives?.data?.[0];
+                            if (creative) {
+                                creativeDetailsMap.set(chunk[idx], {
+                                    creative_id: creative.id,
+                                    thumbnail_url: creative.image_url || creative.thumbnail_url
+                                });
+                            }
+                        }
+                    });
                 }
-              }
-            });
-          }
-        } catch (e) {
-          console.error("Erro thumbnails:", e);
-        }
+            })
+            .catch(e => console.error("Erro batch thumb:", e))
+        );
       }
+      await Promise.all(thumbnailPromises);
     }
 
     if (allInsights.length === 0) {
-      console.log("[META-INSIGHTS] Nenhum insight encontrado para o período");
       return new Response(JSON.stringify({ adsData: [], kpis: {}, channelsData: [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
 
-    // Mapeia os dados da API para o formato da tabela 'campaign_metrics'
+    // --- MAP E UPSERT (MANTIDOS) ---
     const metricsToUpsert = allInsights.map((insight) => {
-      
-      // --- LÓGICA DE LEADS CORRIGIDA PARA FORMULÁRIOS ---
-      // Combina 'actions' e 'conversions' para não perder nada
-      const allEvents = [
-        ...(insight.actions || []), 
-        ...(insight.conversions || [])
-      ];
-
-      // Lista de tipos aceitos como LEAD
-      const validLeadTypes = [
-        'lead',             // Padrãozão do Meta (geralmente soma tudo)
-        'on_facebook_lead', // ESPECÍFICO para Formulários Nativos (Lead Ads)
-        'leadgen_grouped',  // Agrupado
-        'contact',
-        'submit_application',
-        'offsite_conversion.fb_pixel_lead'
-      ];
-
-      // Filtra e soma (evita duplicidade se o mesmo evento vier com nomes diferentes? 
-      // O Meta geralmente separa. Para garantir, pegamos o 'lead' que costuma ser o totalizador, 
-      // ou somamos tipos específicos se 'lead' não existir.
-      // Estratégia segura: Somar apenas 'lead' se existir, pois ele agrega. Se for 0, tentar os específicos.
+      const allEvents = [ ...(insight.actions || []), ...(insight.conversions || []) ];
+      const validLeadTypes = ['lead', 'on_facebook_lead', 'leadgen_grouped', 'contact', 'submit_application', 'offsite_conversion.fb_pixel_lead'];
       
       let totalLeads = 0;
-      
-      // Tenta achar o totalizador 'lead' primeiro (mais seguro para evitar dupla contagem)
       const genericLead = allEvents.find(c => c.action_type === 'lead');
       
       if (genericLead) {
          totalLeads = parseInt(genericLead.value || "0", 10);
       } else {
-         // Se não tem o genérico, soma os específicos (ex: on_facebook_lead)
-         const specificLeads = allEvents.filter(c => 
-            validLeadTypes.includes(c.action_type) && c.action_type !== 'lead'
-         );
+         const specificLeads = allEvents.filter(c => validLeadTypes.includes(c.action_type) && c.action_type !== 'lead');
          totalLeads = specificLeads.reduce((acc, curr) => acc + parseInt(curr.value || "0", 10), 0);
       }
-
-      // LOG DE DIAGNÓSTICO SE HOUVER LEADS
-      if (totalLeads > 0) {
-        console.log(`[SUCESSO] Campanha: ${insight.campaign_name} | Leads encontrados: ${totalLeads}`);
-      }
-      // --------------------------------------------------
 
       const creativeDetails = creativeDetailsMap.get(insight.ad_id);
 
@@ -188,7 +171,7 @@ serve(async (req) => {
         campaign_name: insight.campaign_name,
         ad_set_name: insight.adset_name,
         ad_name: insight.ad_name,
-        creative_name: insight.ad_name, // Usa ad_name como creative_name
+        creative_name: insight.ad_name,
         thumbnail_url: creativeDetails?.thumbnail_url || null,
         date: insight.date_start,
         spend: parseFloat(insight.spend || "0"),
@@ -207,8 +190,6 @@ serve(async (req) => {
       };
     });
 
-    // Executa o "Upsert" no Supabase para evitar duplicidade
-    // Usamos o índice único: user_id, campaign_name, ad_name, date
     const { error: upsertError } = await supabaseClient
       .from("campaign_metrics")
       .upsert(metricsToUpsert, { 
@@ -216,11 +197,9 @@ serve(async (req) => {
         ignoreDuplicates: false 
       });
 
-    if (upsertError) {
-      console.error("Erro Upsert:", upsertError);
-    }
+    if (upsertError) console.error("Erro Upsert:", upsertError);
 
-    // Prepara os dados para retornar ao frontend no formato esperado pelo hook
+    // Retorno para frontend
     const adsData = metricsToUpsert.map(m => ({
       campaign_name: m.campaign_name,
       spend: m.spend,
@@ -230,24 +209,19 @@ serve(async (req) => {
     const totalSpent = metricsToUpsert.reduce((sum, m) => sum + m.spend, 0);
     const totalLeads = metricsToUpsert.reduce((sum, m) => sum + m.leads, 0);
 
-    const kpis = {
-      investido: totalSpent, leads: totalLeads
-    };
-
-    const channelsData = [{
-        name: 'Meta',
-        value: totalSpent
-    }];
-
-    console.log("[META-INSIGHTS] FINALIZADO. Leads Totais:", totalLeads);
+    console.log(`[SUCESSO TOTAL] ${metricsToUpsert.length} linhas processadas. Leads: ${totalLeads}`);
 
     return new Response(
-      JSON.stringify({ adsData, kpis, channelsData }),
+      JSON.stringify({ 
+          adsData, 
+          kpis: { investido: totalSpent, leads: totalLeads }, 
+          channelsData: [{ name: 'Meta', value: totalSpent }] 
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("[META-INSIGHTS] ERRO FATAL:", error.message);
+    console.error("[ERRO GERAL]:", error.message);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
