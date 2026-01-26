@@ -45,6 +45,7 @@
     --neon-purple: 280 100% 65%;
     --neon-orange: 25 100% 55%;
     --neon-pink: 330 100% 60%;
+    --primary-hover: 342 100% 42%; /* Cor para hover do rosa neon */
     
     --surface-1: 222 47% 8%;
     --surface-2: 222 47% 11%;
@@ -89,6 +90,37 @@
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+}
+
+/* --- SCROLLBAR NEON CUSTOMIZADA --- */
+
+/* Largura da barra */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px; /* Para scroll horizontal */
+}
+
+/* Fundo da barra (Cor do fundo do sistema) */
+::-webkit-scrollbar-track {
+  background: #0f172a; /* Fundo do sistema */
+}
+
+/* A parte que mexe (Thumb) - Rosa Neon */
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary)); 
+  border-radius: 6px;
+  border: 2px solid hsl(var(--background)); /* Cria um efeito de espaçamento interno */
+}
+
+/* Efeito ao passar o mouse */
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary-hover)); 
+}
+
+/* Firefox (Suporte parcial) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary)) hsl(var(--background));
 }
 
 @layer components {
@@ -169,22 +201,6 @@
 
   .btn-glow:hover::before {
     @apply opacity-100;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    @apply bg-surface-2 rounded-full;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-muted rounded-full;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground;
   }
 
   .animate-pulse-glow {
