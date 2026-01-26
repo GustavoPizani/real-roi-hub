@@ -3,10 +3,13 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext"; // Se tiver contexto de auth, senão remova
+import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
-import CRMLeadsPage from "./pages/CRMLeadsPage";
 import NotFound from "./pages/NotFound";
+import CRMLeadsPage from "./pages/CRMLeadsPage";
+import APISettings from "./components/settings/APISettings"; // Importando a página de settings
 
 const queryClient = new QueryClient();
 
@@ -17,10 +20,15 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/crm" element={<CRMLeadsPage />} />
+          
+          {/* ROTA ADICIONADA AQUI */}
+          <Route path="/settings" element={<APISettings />} />
+
+          {/* Fallback */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
