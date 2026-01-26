@@ -30,30 +30,41 @@ const Dashboard = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  const { data, creatives, dailyMetrics, rawMetrics, isLoading, fetchDashboardData } = useDashboardData(dateRange, refreshTrigger);
+  // Agora recebemos 'allProjects' do hook
+  const { data, creatives, dailyMetrics, rawMetrics, allProjects, isLoading, fetchDashboardData } = useDashboardData(dateRange, refreshTrigger);
 
   const handleRefresh = () => setRefreshTrigger(prev => prev + 1);
 
+  // --- CORREÇÃO DO FILTRO ---
+  // 1. LISTA DE OPÇÕES: Usa allProjects (que agora são Contas)
   const availableCampaigns = useMemo(() => {
+    // Se temos a lista completa do banco, usamos ela.
+    if (allProjects && allProjects.length > 0) {
+        return allProjects;
+    }
+    // Fallback: tenta pegar account_name dos dados
     if (!data) return [];
-    const campaigns = new Set(data.map(d => d.campaign_name).filter(Boolean));
-    return Array.from(campaigns);
-  }, [data]);
+    return Array.from(new Set(data.map(d => d.account_name).filter(Boolean))).sort();
+  }, [allProjects, data]);
 
+  // 2. FILTRAR CAMPANHAS: Compara 'account_name' com a seleção
   const filteredCampaigns = useMemo(() => {
     if (selectedCampaign === "all") return data;
-    return data.filter(d => d.campaign_name === selectedCampaign);
+    // MUDANÇA: Filtra onde a conta é igual a selecionada
+    return data.filter(d => d.account_name === selectedCampaign);
   }, [data, selectedCampaign]);
 
+  // 3. FILTRAR CRIATIVOS: Compara 'account_name'
   const filteredCreatives = useMemo(() => {
     if (selectedCampaign === "all") return creatives;
-    return creatives.filter(c => c.campaign_name === selectedCampaign);
+    return creatives.filter(c => c.account_name === selectedCampaign);
   }, [creatives, selectedCampaign]);
 
+  // ... (o resto do dynamicChartData também deve filtrar por account_name se necessário)
   const dynamicChartData = useMemo(() => {
     const sourceData = selectedCampaign === "all" 
       ? rawMetrics 
-      : rawMetrics.filter(m => m.campaign_name === selectedCampaign);
+      : rawMetrics.filter(m => m.account_name === selectedCampaign); // MUDANÇA AQUI TAMBÉM
 
     const groupedByDate: Record<string, any> = {};
     
@@ -130,10 +141,10 @@ const Dashboard = () => {
                 <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
                   <SelectTrigger className="w-[200px] bg-[#1e293b] border-slate-700 text-white">
                     <Filter className="w-4 h-4 mr-2 text-slate-400" />
-                    <SelectValue placeholder="Filtrar Projeto" />
+                    <SelectValue placeholder="Filtrar Conta" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
-                    <SelectItem value="all">Todos os Projetos</SelectItem>
+                  <SelectContent className="bg-[#1e293b] border-slate-700 text-white max-h-[400px] overflow-y-auto">
+                    <SelectItem value="all">Todas as Contas</SelectItem>
                     {availableCampaigns.map((camp) => (
                       <SelectItem key={camp} value={camp}>{camp}</SelectItem>
                     ))}
@@ -151,11 +162,10 @@ const Dashboard = () => {
                   {isExporting ? <Loader2 className="h-4 w-4 animate-spin text-[#f90f54]" /> : <Download className="h-4 w-4" />}
                 </Button>
 
-                <Button variant="outline" size="icon" onClick={handleRefresh} className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-white">
+                <Button variant="outline" size="icon" onClick={handleRefresh} className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-white" title="Sincronizar Meta">
                   <TrendingUp className="h-4 w-4" />
                 </Button>
                 
-                {/* --- CHAT SHEET CORRIGIDO --- */}
                 <Sheet open={isChatOpen} onOpenChange={setIsChatOpen}>
                   <SheetTrigger asChild>
                     <Button variant="default" className="gap-2 bg-[#f90f54] hover:bg-[#f90f54]/90 shadow-lg shadow-[#f90f54]/20 border-none text-white font-bold">
@@ -164,21 +174,19 @@ const Dashboard = () => {
                     </Button>
                   </SheetTrigger>
                   
-                  {/* Removido o botão 'X' manual. Usamos Header + Title para acessibilidade */}
                   <SheetContent className="w-full sm:max-w-md p-0 border-l border-slate-800 bg-[#0f172a] flex flex-col">
-                     <SheetHeader className="p-4 border-b border-slate-800 bg-slate-900/50 text-left space-y-0">
-                        <SheetTitle className="text-white text-base font-semibold flex items-center gap-2">
-                           Assistente ROI
-                        </SheetTitle>
-                        {/* Descrição oculta para satisfazer leitores de tela */}
-                        <SheetDescription className="sr-only">
-                           Chatbot de inteligência artificial para análise de marketing.
-                        </SheetDescription>
-                     </SheetHeader>
-                     
-                     <div className="flex-1 overflow-hidden">
-                        <AIChatPanel />
-                     </div>
+                      <SheetHeader className="p-4 border-b border-slate-800 bg-slate-900/50 text-left space-y-0">
+                         <SheetTitle className="text-white text-base font-semibold flex items-center gap-2">
+                            Assistente ROI
+                         </SheetTitle>
+                         <SheetDescription className="sr-only">
+                            Chatbot de inteligência artificial para análise de marketing.
+                         </SheetDescription>
+                      </SheetHeader>
+                      
+                      <div className="flex-1 overflow-hidden">
+                         <AIChatPanel />
+                      </div>
                   </SheetContent>
                 </Sheet>
 
