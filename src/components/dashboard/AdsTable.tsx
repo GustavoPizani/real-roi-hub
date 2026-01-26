@@ -71,7 +71,7 @@ const AdsTable = ({ ads, title }: AdsTableProps) => {
                     {ad.leads}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm text-primary">
+                <TableCell className="text-right font-mono text-sm text-[#f90f54]">
                   R$ {ad.cpl.toFixed(2)}
                 </TableCell>
               </TableRow>

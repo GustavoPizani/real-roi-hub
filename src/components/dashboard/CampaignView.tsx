@@ -78,7 +78,7 @@ export const CampaignView = ({ data, isLoading }: CampaignViewProps) => {
                     <TableCell className="font-medium">
                       {row.campaign_name}
                     </TableCell>
-                    <TableCell className="text-right font-bold text-primary">
+                    <TableCell className="text-right font-bold text-[#f90f54]">
                       {formatCurrency(row.spend)}
                     </TableCell>
                     <TableCell className="text-center">

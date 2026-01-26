@@ -3,12 +3,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useLocation } from "react-router-dom";
 
-interface BottomNavProps {
-  onNavigate: (page: string) => void;
-  // currentPage is now derived internally
-}
-
-const BottomNav = ({ onNavigate }: BottomNavProps) => {
+const BottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
   // Determine the active page based on the current URL pathname
@@ -22,7 +17,7 @@ const BottomNav = ({ onNavigate }: BottomNavProps) => {
   // Define menuItems with path property
   // The prompt explicitly provides this structure
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: Home, path: "/dashboard" },
+    { id: "dashboard", label: "Dashboard", icon: Home, path: "/" },
     { id: "crm", label: "CRM & Leads", icon: Users, path: "/crm" },
     { id: "settings", label: "Config", icon: Settings, path: "/settings" },
   ];
@@ -33,7 +28,7 @@ const BottomNav = ({ onNavigate }: BottomNavProps) => {
         {menuItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => navigate(item.path)} // BottomNav handles its own navigation for menu items
+            onClick={() => navigate(item.path)}
             className={cn(
               "flex flex-col items-center justify-center min-w-[64px] min-h-[44px] py-2 px-3 rounded-xl transition-all active:scale-95",
               isActive(item.path)

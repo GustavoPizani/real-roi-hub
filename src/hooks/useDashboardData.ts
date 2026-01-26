@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
-import { DateRange } from "react-day-picker";
 import { supabase } from "@/integrations/supabase/client";
-import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
 
 export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number) => {
-  const [data, setData] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]); // Dados por Campanha
+  const [creatives, setCreatives] = useState<any[]>([]); // Dados por Criativo (Novo!)
   const [isLoading, setIsLoading] = useState(true);
+  
   const [kpis, setKpis] = useState({
     investido: 0,
     impressions: 0,
     clicks: 0,
-    leads: 0, // Usaremos este campo unificado
+    leads: 0,
     reach: 0,
     cpl: 0,
     ctr: 0,
@@ -20,7 +22,6 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
     revenue: 0,
   });
 
-  // Função auxiliar para garantir números válidos
   const safeNumber = (val: any) => {
     const num = Number(val);
     return isNaN(num) ? 0 : num;
@@ -33,7 +34,7 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Busca dados do Meta (Tabela campaign_metrics)
+      // 1. Busca dados do Meta
       let query = supabase
         .from("campaign_metrics")
         .select("*")
@@ -49,27 +50,26 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
       const { data: metricsData, error: metricsError } = await query;
       if (metricsError) throw metricsError;
 
-      // 2. Busca dados do CRM (Tabela crm_leads)
+      // 2. Busca dados do CRM
       let crmQuery = supabase
         .from("crm_leads")
         .select("*")
         .eq("user_id", user.id);
         
       if (dateRange?.from) {
-        crmQuery = crmQuery.gte("data_cadastro", format(dateRange.from, "yyyy-MM-dd"));
+        crmQuery = crmQuery.gte("created_at", format(dateRange.from, "yyyy-MM-dd"));
       }
       if (dateRange?.to) {
-        crmQuery = crmQuery.lte("data_cadastro", format(dateRange.to, "yyyy-MM-dd"));
+        crmQuery = crmQuery.lte("created_at", format(dateRange.to, "yyyy-MM-dd") + " 23:59:59");
       }
 
       const { data: crmData, error: crmError } = await crmQuery;
-      if (crmError) throw crmError;
+      if (crmError) console.error("Erro CRM:", crmError);
 
-      // 3. Processamento e Agregação (AQUI ESTÁ A MÁGICA)
-      // Agrupamos por campanha para a Tabela de Campanhas
+      // 3. Processamento (Agregações)
       const campaignGroups: Record<string, any> = {};
+      const creativeGroups: Record<string, any> = {}; // Agrupamento por Criativo
       
-      // Acumuladores Gerais para os KPIs do Topo
       let totalSpend = 0;
       let totalImpressions = 0;
       let totalClicks = 0;
@@ -78,45 +78,54 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
 
       (metricsData || []).forEach((row) => {
         const campName = row.campaign_name || "Sem Nome";
+        const adName = row.ad_name || "Criativo Sem Nome"; // Chave para criativos
         
-        // Garante que estamos somando números
         const spend = safeNumber(row.spend);
-        const leads = safeNumber(row.leads); // Agora lendo a coluna certa!
+        const leads = safeNumber(row.leads);
         const impressions = safeNumber(row.impressions);
         const clicks = safeNumber(row.clicks);
         const reach = safeNumber(row.reach);
 
-        // Somar nos KPIs Gerais
+        // Totais Gerais
         totalSpend += spend;
         totalLeads += leads;
         totalImpressions += impressions;
         totalClicks += clicks;
         totalReach += reach;
 
-        // Agrupar por Campanha
+        // A. Agrupar por Campanha
         if (!campaignGroups[campName]) {
           campaignGroups[campName] = {
             campaign_name: campName,
-            spend: 0,
-            leads: 0,
-            impressions: 0,
-            clicks: 0,
-            reach: 0,
-            // Campos calculados depois
-            cpl: 0,
-            ctr: 0,
-            cpc: 0
+            spend: 0, leads: 0, impressions: 0, clicks: 0, reach: 0
           };
         }
-
         campaignGroups[campName].spend += spend;
         campaignGroups[campName].leads += leads;
         campaignGroups[campName].impressions += impressions;
         campaignGroups[campName].clicks += clicks;
         campaignGroups[campName].reach += reach;
+
+        // B. Agrupar por Criativo (Isso corrige a aba de Criativos!)
+        // Usamos adName + campName como chave única para não misturar ads iguais de campanhas diferentes
+        const creativeKey = `${adName}_${campName}`; 
+        
+        if (!creativeGroups[creativeKey]) {
+          creativeGroups[creativeKey] = {
+            ad_name: adName,
+            campaign_name: campName,
+            thumbnail_url: row.thumbnail_url, // Preserva a miniatura!
+            channel: row.channel,
+            spend: 0, leads: 0, impressions: 0, clicks: 0
+          };
+        }
+        creativeGroups[creativeKey].spend += spend;
+        creativeGroups[creativeKey].leads += leads;
+        creativeGroups[creativeKey].impressions += impressions;
+        creativeGroups[creativeKey].clicks += clicks;
       });
 
-      // Transforma o objeto agrupado em array e calcula as médias (CTR, CPC, CPL)
+      // Formatar Campanhas
       const formattedCampaigns = Object.values(campaignGroups).map((camp: any) => ({
         ...camp,
         cpl: camp.leads > 0 ? camp.spend / camp.leads : 0,
@@ -124,10 +133,16 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
         cpc: camp.clicks > 0 ? camp.spend / camp.clicks : 0,
       }));
 
-      // Atualiza o estado da Tabela
-      setData(formattedCampaigns);
+      // Formatar Criativos
+      const formattedCreatives = Object.values(creativeGroups).map((ad: any) => ({
+        ...ad,
+        cpl: ad.leads > 0 ? ad.spend / ad.leads : 0,
+        ctr: ad.impressions > 0 ? (ad.clicks / ad.impressions) * 100 : 0,
+      }));
 
-      // Atualiza o estado dos KPIs
+      setCampaigns(formattedCampaigns); // Lista de Campanhas
+      setCreatives(formattedCreatives); // Lista de Criativos com Thumbnail
+
       setKpis({
         investido: totalSpend,
         leads: totalLeads,
@@ -138,12 +153,12 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
         ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
         cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
         crm_leads: crmData?.length || 0,
-        sales: 0, // Implementar lógica de vendas se houver coluna no CRM
+        sales: 0,
         revenue: 0,
       });
 
     } catch (error) {
-      console.error("Erro ao buscar dados do dashboard:", error);
+      console.error("Erro crítico no useDashboardData:", error);
     } finally {
       setIsLoading(false);
     }
@@ -153,5 +168,12 @@ export const useDashboardData = (dateRange?: DateRange, refreshTrigger?: number)
     fetchDashboardData();
   }, [dateRange, refreshTrigger]);
 
-  return { data, isLoading, kpis, fetchDashboardData };
+  // Retornamos 'campaigns' (antigo data) e 'creatives' separados
+  return { 
+    data: campaigns, // Mantido como 'data' para compatibilidade com o resto
+    creatives,       // Novo!
+    isLoading, 
+    kpis, 
+    fetchDashboardData 
+  };
 };

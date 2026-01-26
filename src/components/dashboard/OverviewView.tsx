@@ -1,252 +1,123 @@
-import { TrendingUp, TrendingDown, DollarSign, MousePointer, Eye, Users, Target, Percent } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { 
+  DollarSign, 
+  MousePointer, 
+  Hash, 
+  Percent, 
+  Users, 
+  Target, 
+  Eye, 
+  MousePointerClick, 
+  Globe, 
+  Activity,
+  Bot
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface OverviewViewProps {
-  kpis: {
-    spend: number;
-    impressions: number;
-    clicks: number;
-    leads: number;
-    ctr: number;
-    cpc: number;
-    cpm: number;
-    cpl: number;
-    reach: number;
-    frequency: number;
-  };
-  previousPeriodKpis?: {
-    spend: number;
-    cpc: number;
-    cpm: number;
-    ctr: number;
-    cpl: number;
-  };
-  funnelData: { name: string; value: number; percentage: number; color: string }[];
+  data: any[];
+  isLoading: boolean;
 }
 
-// Função de formatação blindada contra undefined/null
-const formatNumber = (value: number | undefined | null, type: 'currency' | 'number' | 'percent' = 'number'): string => {
-  const safeValue = value ?? 0; // Se for undefined/null, vira 0
+// Componente Local de Card para a Visão Geral
+const OverviewCard = ({ title, value, icon: Icon, format, isLoading }: any) => {
+  const formattedValue = () => {
+    if (format === 'currency') return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+    if (format === 'percentage') return `${(value || 0).toFixed(2)}%`;
+    if (format === 'decimal') return (value || 0).toFixed(2);
+    return new Intl.NumberFormat("pt-BR").format(value || 0);
+  };
 
-  if (type === 'currency') {
-    return `R$ ${safeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  if (type === 'percent') {
-    return `${safeValue.toFixed(2)}%`;
-  }
-  if (safeValue >= 1000000) {
-    return `${(safeValue / 1000000).toFixed(1)}M`;
-  }
-  if (safeValue >= 1000) {
-    return `${(safeValue / 1000).toFixed(1)}K`;
-  }
-  return safeValue.toLocaleString('pt-BR');
-};
-
-const descriptions: Record<string, string> = {
-  "Investimento Total": "Total investido nas plataformas de anúncios selecionadas.",
-  "CPC": "Custo por Clique: O valor médio pago por cada clique no anúncio.",
-  "CPM": "Custo por Mil Impressões: O custo para que seu anúncio seja exibido 1.000 vezes.",
-  "CTR": "Taxa de Cliques (Click-Through Rate): Percentual de pessoas que viram o anúncio e clicaram.",
-  "Conversões": "Número de leads gerados diretamente pelas campanhas da Meta, conforme dados da API.",
-  "CPL": "Custo por Lead: Quanto você pagou em média por cada lead gerado na plataforma da Meta.",
-  "Impressões": "Número total de vezes que seus anúncios foram exibidos.",
-  "Cliques": "Número total de cliques nos seus anúncios.",
-  "Alcance": "Número de pessoas únicas que viram seus anúncios pelo menos uma vez.",
-  "Frequência": "Quantidade média de vezes que cada pessoa viu seus anúncios.",
-};
-
-const calcVariation = (current: number | undefined, previous?: number): { value: number; isPositive: boolean } | null => {
-  const safeCurrent = current ?? 0;
-  if (!previous || previous === 0) return null;
-  const variation = ((safeCurrent - previous) / previous) * 100;
-  return { value: Math.abs(variation), isPositive: variation >= 0 };
-};
-
-const KPICard = ({ 
-  label, 
-  value, 
-  icon: Icon, 
-  color = 'text-white',
-  variation,
-  invertVariation = false
-}: { 
-  label: string; 
-  value: string; 
-  icon: React.ElementType;
-  color?: string;
-  variation?: { value: number; isPositive: boolean } | null;
-  invertVariation?: boolean;
-}) => {
-  const isPositive = variation ? (invertVariation ? !variation.isPositive : variation.isPositive) : true;
-  
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-5 md:p-6 rounded-2xl shadow-xl hover:border-[#f90f54]/30 transition-all group cursor-help">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
-              <Icon className={`w-4 h-4 ${color} opacity-60 group-hover:opacity-100 transition-opacity`} />
-            </div>
-            <p className={`text-xl md:text-2xl lg:text-3xl font-bold mt-2 tracking-tight ${color} whitespace-nowrap overflow-hidden text-ellipsis`}>{value}</p>
-            {variation && (
-              <div className="flex items-center gap-1 mt-2">
-                {isPositive ? (
-                  <TrendingUp className="w-3 h-3 text-green-400" />
-                ) : (
-                  <TrendingDown className="w-3 h-3 text-red-400" />
-                )}
-                <span className={`text-[10px] font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                  {variation.value.toFixed(1)}%
-                </span>
-                <span className="text-[10px] text-slate-500">vs período anterior</span>
-              </div>
-            )}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent className="bg-slate-800 border-slate-700 text-xs max-w-[200px]">
-          <p>{descriptions[label] || "Métrica de performance de anúncios."}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-};
-
-const OverviewView = ({ kpis, previousPeriodKpis, funnelData }: OverviewViewProps) => {
-  // Se kpis for undefined, retornamos um aviso ou um esqueleto de carregamento
-  if (!kpis) {
+  if (isLoading) {
     return (
-      <div className="p-8 text-center bg-[#1e293b]/20 rounded-2xl border border-slate-800">
-        <p className="text-slate-400 font-medium">Aguardando dados das campanhas...</p>
-        <p className="text-xs text-slate-500 mt-2">Faça o upload de uma planilha para visualizar as métricas.</p>
+      <div className="bg-[#1e293b]/40 border border-slate-700/50 p-4 rounded-xl">
+        <Skeleton className="h-3 w-1/2 mb-2 bg-slate-700" />
+        <Skeleton className="h-6 w-3/4 bg-slate-700" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KPICard 
-          label="Investimento Total" 
-          value={formatNumber(kpis.spend, 'currency')} 
-          icon={DollarSign}
-          color="text-white"
-          variation={calcVariation(kpis.spend, previousPeriodKpis?.spend)}
-        />
-        <KPICard 
-          label="CPC" 
-          value={formatNumber(kpis.cpc, 'currency')} 
-          icon={MousePointer}
-          color="text-cyan-400"
-          variation={calcVariation(kpis.cpc, previousPeriodKpis?.cpc)}
-          invertVariation={true}
-        />
-        <KPICard 
-          label="CPM" 
-          value={formatNumber(kpis.cpm, 'currency')} 
-          icon={Eye}
-          color="text-purple-400"
-          variation={calcVariation(kpis.cpm, previousPeriodKpis?.cpm)}
-          invertVariation={true}
-        />
-        <KPICard 
-          label="CTR" 
-          value={formatNumber(kpis.ctr, 'percent')} 
-          icon={Percent}
-          color="text-green-400"
-          variation={calcVariation(kpis.ctr, previousPeriodKpis?.ctr)}
-        />
-        <KPICard 
-          label="Conversões" 
-          value={formatNumber(kpis.leads)} 
-          icon={Users}
-          color="text-[#f90f54]"
-        />
-        <KPICard 
-          label="CPL" 
-          value={formatNumber(kpis.cpl, 'currency')} 
-          icon={Target}
-          color="text-orange-400"
-          variation={calcVariation(kpis.cpl, previousPeriodKpis?.cpl)}
-          invertVariation={true}
-        />
+    <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl hover:border-[#f90f54]/30 transition-all group">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{title}</span>
+        <Icon className="w-4 h-4 text-[#f90f54] opacity-60 group-hover:opacity-100 transition-opacity" />
       </div>
-
-      {/* Secondary Metrics - Blindadas com (?? 0) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Impressões</span>
-          <p className="text-xl font-bold mt-1 text-slate-200">{formatNumber(kpis.impressions)}</p>
-        </div>
-        <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cliques</span>
-          <p className="text-xl font-bold mt-1 text-slate-200">{formatNumber(kpis.clicks)}</p>
-        </div>
-        <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Alcance</span>
-          <p className="text-xl font-bold mt-1 text-slate-200">{formatNumber(kpis.reach)}</p>
-        </div>
-        <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Frequência</span>
-          <p className="text-xl font-bold mt-1 text-slate-200">{(kpis.frequency ?? 0).toFixed(2)}</p>
-        </div>
-      </div>
-
-      {/* Performance Funnel - Blindado com (funnelData ?? []) */}
-      <div className="bg-[#1e293b]/40 backdrop-blur-md border border-slate-700/50 rounded-2xl p-5 md:p-7 shadow-xl">
-        <h3 className="text-sm font-bold mb-6 uppercase text-slate-400 tracking-[0.15em]">Funil de Performance</h3>
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <div className="w-full max-w-md space-y-2">
-              {(funnelData ?? []).map((item, index) => (
-                <div 
-                  key={index} 
-                  className="relative overflow-hidden"
-                  style={{ 
-                    width: `${100 - (index * 15)}%`,
-                    marginLeft: `${index * 7.5}%`
-                  }}
-                >
-                  <div className={`${item.color} h-12 md:h-14 rounded-lg flex items-center justify-center relative`}>
-                    <div className="flex items-center gap-2 text-white font-bold text-sm">
-                      <span>{formatNumber(item.value)}</span>
-                    </div>
-                  </div>
-                  <div className="absolute -right-20 top-1/2 -translate-y-1/2 flex items-center gap-2 text-xs">
-                    <span className="text-slate-400">{item.name}</span>
-                    {index > 0 && (
-                      <span className="text-slate-500">({(item.percentage ?? 0).toFixed(1)}%)</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 space-y-4">
-            {(funnelData ?? []).map((item, index) => (
-              <div key={index} className="group">
-                <div className="flex justify-between text-[10px] font-black mb-2 uppercase tracking-widest">
-                  <span className="text-slate-300">{item.name}</span>
-                  <span className="text-white bg-slate-800/50 px-2 py-0.5 rounded">
-                    {formatNumber(item.value)} {index > 0 && `(${(item.percentage ?? 0).toFixed(1)}%)`}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-800/50 h-5 rounded-lg overflow-hidden border border-slate-700/30">
-                  <div 
-                    className={`${item.color} h-full transition-all duration-1000 shadow-lg`} 
-                    style={{ width: `${Math.min(item.percentage ?? 0, 100)}%` }} 
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <p className="text-xl font-bold text-white truncate">
+        {formattedValue()}
+      </p>
     </div>
   );
 };
 
-export default OverviewView;
+export const OverviewView = ({ data, isLoading }: OverviewViewProps) => {
+  
+  // 1. Calcular Totais da Visão Geral
+  const totals = (data || []).reduce((acc, curr) => ({
+    spend: acc.spend + (curr.spend || 0),
+    impressions: acc.impressions + (curr.impressions || 0),
+    clicks: acc.clicks + (curr.clicks || 0),
+    leads: acc.leads + (curr.leads || 0),
+    reach: acc.reach + (curr.reach || 0),
+  }), { spend: 0, impressions: 0, clicks: 0, leads: 0, reach: 0 });
+
+  // 2. Calcular Métricas Derivadas
+  const cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
+  const cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
+  const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+  const cpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
+  const frequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+
+  // Lista dos 10 Cards solicitados
+  const cards = [
+    { title: "Investimento Total", value: totals.spend, icon: DollarSign, format: 'currency' },
+    { title: "CPC", value: cpc, icon: MousePointer, format: 'currency' },
+    { title: "CPM", value: cpm, icon: Hash, format: 'currency' },
+    { title: "CTR", value: ctr, icon: Percent, format: 'percentage' },
+    { title: "Conversões", value: totals.leads, icon: Target, format: 'number' },
+    { title: "CPL", value: cpl, icon: Users, format: 'currency' },
+    { title: "Impressões", value: totals.impressions, icon: Eye, format: 'number' },
+    { title: "Cliques", value: totals.clicks, icon: MousePointerClick, format: 'number' },
+    { title: "Alcance", value: totals.reach, icon: Globe, format: 'number' },
+    { title: "Frequência", value: frequency, icon: Activity, format: 'decimal' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Grade de 10 Cards Detalhados */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {cards.map((card, index) => (
+          <OverviewCard
+            key={index}
+            title={card.title}
+            value={card.value}
+            icon={card.icon}
+            format={card.format}
+            isLoading={isLoading}
+          />
+        ))}
+      </div>
+
+      {/* Sessão de Insights da IA (Substituindo o Gráfico) */}
+      <Card className="bg-[#1e293b]/40 border-slate-700/50 backdrop-blur-md">
+        <CardHeader className="border-b border-slate-700/50 pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg text-white">
+            <Bot className="w-5 h-5 text-[#f90f54]" />
+            Insights de Performance (IA)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="min-h-[200px] flex flex-col items-center justify-center text-slate-400 text-sm border-2 border-dashed border-slate-700/30 rounded-xl bg-slate-900/20 p-8 text-center">
+            <Bot className="w-10 h-10 mb-4 text-slate-600" />
+            <p className="max-w-md">
+              Seus dados estão sendo processados. A Inteligência Artificial analisará seus 
+              CPCs e CTRs para sugerir otimizações de orçamento em breve.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+    </div>
+  );
+};

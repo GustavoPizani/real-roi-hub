@@ -1,60 +1,67 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface PeriodChartProps {
-  data: Array<{
-    period: string;
-    value: number;
-  }>;
-  title: string;
+  data: any[];
+  isLoading: boolean;
 }
 
-const PeriodChart = ({ data, title }: PeriodChartProps) => {
+// ATENÇÃO: Usando 'export const' para alinhar com a importação
+export const PeriodChart = ({ data, isLoading }: PeriodChartProps) => {
+  if (isLoading) {
+    return (
+      <Card className="col-span-1 lg:col-span-7">
+        <CardHeader>
+          <CardTitle>Investimento por Campanha</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[300px] w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <div className="chart-container">
-      <h3 className="text-lg font-semibold mb-4">{title}</h3>
-      <div className="h-[280px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart 
-            data={data} 
-            layout="vertical"
-            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 47%, 20%)" opacity={0.5} horizontal={false} />
-            <XAxis 
-              type="number"
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 12 }}
-            />
-            <YAxis 
-              type="category"
-              dataKey="period"
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 12 }}
-              width={80}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'hsl(222, 47%, 11%)',
-                border: '1px solid hsl(222, 47%, 20%)',
-                borderRadius: '12px',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-              }}
-              formatter={(value: number) => [`${value} leads`, 'Total']}
-              cursor={{ fill: 'hsl(222, 47%, 15%)', opacity: 0.5 }}
-            />
-            <Bar 
-              dataKey="value" 
-              fill="hsl(174, 100%, 50%)" 
-              radius={[0, 4, 4, 0]}
-              barSize={24}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+    <Card className="col-span-1 lg:col-span-7">
+      <CardHeader>
+        <CardTitle>Investimento por Campanha</CardTitle>
+      </CardHeader>
+      <CardContent className="pl-2">
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis 
+                dataKey="campaign_name" 
+                stroke="#888888"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => value && value.length > 10 ? `${value.substring(0, 10)}...` : value}
+              />
+              <YAxis
+                stroke="#888888"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `R$${value}`}
+              />
+              <Tooltip 
+                formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Investimento']}
+                cursor={{ fill: 'transparent' }}
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+              />
+              <Bar
+                dataKey="spend"
+                fill="currentColor"
+                radius={[4, 4, 0, 0]}
+                className="fill-primary"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
-
-export default PeriodChart;

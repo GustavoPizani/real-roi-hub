@@ -1,54 +1,28 @@
-import { CalendarDays } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DateRange } from "react-day-picker";
-import { DatePickerWithRange } from "@/components/ui/date-picker";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import Sidebar from "./Sidebar";
 
-interface MobileHeaderProps {
-  date?: DateRange;
-  setDate: (date: DateRange | undefined) => void;
-  isUsingMockData: boolean;
-}
-
-const MobileHeader = ({ date, setDate, isUsingMockData }: MobileHeaderProps) => {
+// Alterado para exportação nomeada para bater com o import do Dashboard
+export const MobileHeader = () => {
   return (
-    <header className="sticky top-0 z-40 bg-[#0f172a]/95 backdrop-blur-xl border-b border-slate-800/50 px-4 py-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-black tracking-tighter text-white">
-            REAL <span className="text-[#f90f54]">ROI</span>
-          </h1>
-          <div className={cn(
-            "w-2 h-2 rounded-full animate-pulse",
-            isUsingMockData ? 'bg-red-500' : 'bg-green-500'
-          )} />
-        </div>
-        
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="icon"
-              className="min-w-[44px] min-h-[44px] text-slate-400 hover:text-white hover:bg-slate-800/50 active:scale-95"
-            >
-              <CalendarDays className="w-5 h-5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0 bg-[#1e293b] border-slate-700" align="end">
-            <DatePickerWithRange date={date} setDate={setDate} />
-          </PopoverContent>
-        </Popover>
+    <header className="sticky top-0 z-50 flex h-16 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button variant="ghost" size="icon" className="mr-2">
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Toggle Menu</span>
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="p-0 w-72">
+          <Sidebar />
+        </SheetContent>
+      </Sheet>
+      <div className="flex items-center gap-2">
+        <span className="text-lg font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+          Real ROI
+        </span>
       </div>
     </header>
   );
 };
-
-export default MobileHeader;
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
-}

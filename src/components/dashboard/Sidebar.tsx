@@ -1,76 +1,91 @@
-import { BarChart3, Settings, Upload, LogOut, Home, Users, Database } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { LayoutDashboard, Users, Settings, LogOut, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
+
+const menuItems = [
+  { icon: LayoutDashboard, label: "Visão Geral", path: "/" },
+  { icon: Users, label: "CRM & Leads", path: "/crm" },
+  { icon: Settings, label: "Configurações", path: "/settings" },
+];
 
 const Sidebar = () => {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useToast();
-  // Determine the active page based on the current URL pathname
-  // Use startsWith for partial matches, e.g., /crm/leads should still highlight /crm
-  const isActive = (path: string) => location.pathname.startsWith(path);
+
+  const isActive = (path: string) => {
+    if (path === '/') {
+      return location.pathname === '/';
+    }
+    return location.pathname.startsWith(path);
+  };
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({ title: "Erro ao sair", variant: "destructive" });
-    } else {
+    try {
+      await supabase.auth.signOut();
       navigate("/auth");
+    } catch (error) {
+      toast({
+        title: "Erro ao sair",
+        description: "Ocorreu um erro ao tentar sair da aplicação.",
+        variant: "destructive",
+      });
     }
   };
 
-  // Define menuItems with path property
-  // The prompt explicitly provides this structure
-  const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: BarChart3, path: "/dashboard" },
-    { id: "crm", label: "CRM & Leads", icon: Users, path: "/crm" },
-    { id: "settings", label: "Configurações", icon: Settings, path: "/settings" },
-  ];
-
   return (
-    <aside className="w-64 flex-shrink-0 bg-[#1a1f2c] border-r border-slate-800 flex flex-col shadow-[4px_0_24px_rgba(249,15,84,0.05)]">
-      {/* Logo com Nome Atualizado e Neon Rosa */}
-      <div className="p-6 border-b border-slate-800">
+    <aside className="hidden h-screen w-64 flex-col border-r border-slate-800 bg-[#1a1f2c] shadow-[4px_0_24px_rgba(249,15,84,0.05)] md:flex">
+      <div className="flex h-16 items-center border-b border-slate-800 px-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#f90f54]/10 border border-[#f90f54]/30 flex items-center justify-center shadow-[0_0_15px_rgba(249,15,84,0.2)]">
-            <BarChart3 className="w-5 h-5 text-[#f90f54]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#f90f54]/30 bg-[#f90f54]/10 shadow-[0_0_15px_rgba(249,15,84,0.2)]">
+            <BarChart3 className="h-5 w-5 text-[#f90f54]" />
           </div>
           <div>
-            <h1 className="font-black text-sm tracking-tighter text-white">REAL <span className="text-[#f90f54]">ROI HUB</span></h1>
-            <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Intelligence</p>
+            <h1 className="text-sm font-black tracking-tighter text-white">REAL <span className="text-[#f90f54]">ROI HUB</span></h1>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Intelligence</p>
           </div>
         </div>
       </div>
-
-      {/* Navegação Principal */}
-      <nav className="flex-1 p-4 space-y-2">
+      
+      <nav className="flex flex-1 flex-col gap-y-2 p-4">
         {menuItems.map((item) => (
-          <Button
-            key={item.id}
-            variant="ghost"
-            className={cn(
-              "w-full justify-start gap-3 h-11 text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all duration-300 rounded-xl",
-              isActive(item.path) && "bg-[#f90f54]/10 text-[#f90f54] border border-[#f90f54]/20 shadow-[0_0_20px_rgba(249,15,84,0.1)]"
-            )}
-            onClick={() => navigate(item.path)} // Sidebar handles its own navigation for menu items
-          >
-            <item.icon className={cn("w-5 h-5", isActive(item.path) ? "text-[#f90f54]" : "text-slate-500")} />
-            <span className="font-bold text-xs uppercase tracking-wider">{item.label}</span>
-          </Button>
+          <Link key={item.path} to={item.path}>
+            <Button
+              variant="ghost"
+              className={cn(
+                "w-full justify-start gap-3 h-11 rounded-xl px-4 transition-all duration-300",
+                isActive(item.path) 
+                  ? "bg-[#f90f54]/10 text-[#f90f54] border border-[#f90f54]/20 shadow-[0_0_20px_rgba(249,15,84,0.1)]" 
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+              )}
+            >
+              <item.icon className={cn("h-5 w-5", isActive(item.path) ? "text-[#f90f54]" : "text-slate-500")} />
+              <span className="font-bold text-xs uppercase tracking-wider">{item.label}</span>
+            </Button>
+          </Link>
         ))}
       </nav>
 
-      {/* Botão de Sair */}
-      <div className="p-4 border-t border-slate-800">
+      <div className="mt-auto p-4 border-t border-slate-800">
+        <div className="mb-4 rounded-lg bg-green-500/10 px-3 py-2 border border-green-500/20">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+            </span>
+            <span className="text-xs font-medium text-green-500">API Conectada</span>
+          </div>
+        </div>
+
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 h-11 text-slate-500 hover:text-red-400 hover:bg-red-500/5 transition-all rounded-xl"
           onClick={handleLogout}
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="h-5 w-5" />
           <span className="font-bold text-xs uppercase tracking-wider">Sair</span>
         </Button>
       </div>
