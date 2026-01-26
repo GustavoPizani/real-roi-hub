@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import LeadCard from "./LeadCard";
 
@@ -30,15 +30,18 @@ interface CampaignData {
 interface LeadsTableProps {
   userId: string;
   refreshTrigger: number;
+  filterCampaign: string;
+  setFilterCampaign: (value: string) => void;
+  sortOrder: "asc" | "desc";
   campaigns: CampaignData[];
 }
 
 const STATUS_PRIORITY: Record<string, number> = {
-  'purchase': 1,           // Prioridade Máxima
+  'purchase': 1,
   'submitapplication': 2,
   'schedule': 3,
   'contact': 4,
-  'lead': 5,               // Prioridade Padrão
+  'lead': 5,
   'novo': 6
 };
 
@@ -72,12 +75,11 @@ const formatRelativeDate = (dateString: string | null): string => {
   }
 };
 
-const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
+const LeadsTable = ({ userId, refreshTrigger, filterCampaign, setFilterCampaign, sortOrder, campaigns }: LeadsTableProps) => {
   const isMobile = useIsMobile();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [campaignFilter, setCampaignFilter] = useState("all");
   const [originFilter, setOriginFilter] = useState("all");
   
   const [currentPage, setCurrentPage] = useState(1);
@@ -85,40 +87,40 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
 
   useEffect(() => {
     const fetchLeads = async () => {
+      if (!userId) return;
       setLoading(true);
-      let query = supabase
-        .from("crm_leads")
-        .select("id, nome, email, telefone, campanha_nome, situacao_atendimento, cadastro, fac_id, updated_at")
-        .eq("user_id", userId)
-        .order("cadastro", { ascending: false });
+      try {
+        let query = supabase
+          .from("crm_leads")
+          .select("*")
+          .eq("user_id", userId);
 
-      if (campaignFilter !== "all") {
-        query = query.eq("campanha_nome", campaignFilter);
-      }
+        if (filterCampaign !== "all") {
+          query = query.eq("campanha_nome", filterCampaign);
+        }
 
-      const { data, error } = await query;
+        // Ordenação por DATA (META) conforme solicitado para auditoria
+        const { data, error } = await query.order("cadastro", { ascending: sortOrder === 'asc' });
 
-      if (error) {
-        console.error("Error fetching leads:", error);
-      } else {
+        if (error) throw error;
         setLeads(data as Lead[]);
+      } catch (error) {
+        console.error("Error fetching leads:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
-    if (userId) {
-      fetchLeads();
-    }
-  }, [userId, refreshTrigger, campaignFilter]);
+    fetchLeads();
+  }, [userId, refreshTrigger, filterCampaign, sortOrder]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, campaignFilter, originFilter, rowsPerPage]);
+  }, [searchTerm, filterCampaign, originFilter, rowsPerPage]);
 
   const filteredLeads = useMemo(() => {
     let tempLeads = [...leads];
 
-    // 1. Filtros de Origem (Mantidos)
     if (originFilter === 'synced') {
       tempLeads = tempLeads.filter(lead => 
         !lead.fac_id?.startsWith('ag:') && lead.nome && lead.nome !== 'Sem Nome'
@@ -129,7 +131,6 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
       );
     }
 
-    // 2. Filtro de Busca (Mantido)
     if (searchTerm) {
       const lowercasedFilter = searchTerm.toLowerCase();
       tempLeads = tempLeads.filter(
@@ -140,24 +141,9 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
       );
     }
 
-    // 3. LOGICA DE PRIORIZAÇÃO
-    return tempLeads.sort((a, b) => {
-      const statusA = a.situacao_atendimento?.toLowerCase() || 'lead';
-      const statusB = b.situacao_atendimento?.toLowerCase() || 'lead';
-
-      const priorityA = STATUS_PRIORITY[statusA] || 99;
-      const priorityB = STATUS_PRIORITY[statusB] || 99;
-
-      // Se as prioridades forem diferentes, ordena pelo peso (menor número primeiro)
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-
-      // Se o status for o mesmo, mantém a ordem cronológica (mais novos primeiro)
-      const dateA = a.cadastro ? new Date(a.cadastro).getTime() : 0;
-      const dateB = b.cadastro ? new Date(b.cadastro).getTime() : 0;
-      return dateB - dateA;
-    });
+    // Apenas aplica priorização se não estiver em "Modo Auditoria" (se o sortOrder for padrão desc)
+    // Se o usuário clicar para ordenar por data, respeitamos a data.
+    return tempLeads;
   }, [leads, searchTerm, originFilter]);
 
   const totalPages = Math.ceil(filteredLeads.length / rowsPerPage);
@@ -167,11 +153,10 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
   );
 
   return (
-    <div className="glass-card p-4 md:p-6">
-      {/* Filters */}
+    <div className="glass-card p-4 md:p-6 bg-slate-900/40 border border-slate-800 rounded-xl">
       <div className="flex flex-col gap-4 mb-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg md:text-xl font-semibold">Leads do CRM</h2>
+          <h2 className="text-lg md:text-xl font-semibold text-white">Leads do CRM</h2>
         </div>
         
         <div className="flex flex-col md:flex-row gap-3">
@@ -179,26 +164,28 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
             placeholder="Buscar por nome, email, telefone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full md:w-[250px] bg-surface-2 min-h-[44px]"
+            className="w-full md:w-[250px] bg-[#0f172a] border-slate-700 text-white min-h-[44px]"
           />
-          <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-            <SelectTrigger className="w-full md:w-[250px] bg-surface-2 min-h-[44px]">
+          
+          <Select value={filterCampaign} onValueChange={setFilterCampaign}>
+            <SelectTrigger className="w-full md:w-[250px] bg-[#0f172a] border-slate-700 text-white min-h-[44px]">
               <SelectValue placeholder="Filtrar por campanha" />
             </SelectTrigger>
-            <SelectContent className="bg-[#1e293b] border-slate-700">
+            <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
               <SelectItem value="all">Todas as Campanhas</SelectItem>
-              {(campaigns || []).filter(c => c.campaignName && c.campaignName.trim() !== "").map((c) => (
+              {(campaigns || []).filter(c => c.campaignName).map((c) => (
                 <SelectItem key={c.campaignName} value={c.campaignName}>
                   {c.campaignName}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+
           <Select value={originFilter} onValueChange={setOriginFilter}>
-            <SelectTrigger className="w-full md:w-[200px] bg-surface-2 min-h-[44px]">
+            <SelectTrigger className="w-full md:w-[200px] bg-[#0f172a] border-slate-700 text-white min-h-[44px]">
               <SelectValue placeholder="Filtrar por origem" />
             </SelectTrigger>
-            <SelectContent className="bg-[#1e293b] border-slate-700">
+            <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="synced">Sincronizados</SelectItem>
               <SelectItem value="meta_only">Apenas na Meta</SelectItem>
@@ -207,59 +194,52 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
         </div>
       </div>
 
-      {/* Content - Cards on Mobile, Table on Desktop */}
       {loading ? (
-        <div className="flex justify-center py-10">
-          <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 text-[#f90f54] animate-spin" />
         </div>
       ) : isMobile ? (
-        /* Mobile: Expandable Cards */
         <div className="space-y-3">
           {currentLeads.length > 0 ? (
             currentLeads.map((lead) => (
               <LeadCard key={lead.id} lead={lead} />
             ))
           ) : (
-            <div className="text-center py-10 text-muted-foreground">
-              Nenhum lead encontrado.
-            </div>
+            <div className="text-center py-10 text-slate-500">Nenhum lead encontrado.</div>
           )}
         </div>
       ) : (
-        /* Desktop: Table */
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Contato</TableHead>
-                <TableHead>Campanha</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Data de Cadastro</TableHead>
-                <TableHead>Última Att.</TableHead>
+            <TableHeader className="bg-slate-900/60">
+              <TableRow className="border-slate-800">
+                <TableHead className="text-slate-400">Cliente</TableHead>
+                <TableHead className="text-slate-400">Contato</TableHead>
+                <TableHead className="text-slate-400">Campanha</TableHead>
+                <TableHead className="text-slate-400">Status</TableHead>
+                <TableHead className="text-slate-400">Data Cadastro</TableHead>
+                <TableHead className="text-slate-400 text-right">Última Att.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {currentLeads.length > 0 ? (
                 currentLeads.map((lead) => (
-                  <TableRow key={lead.id} className="hover:bg-white/5 transition-colors">
-                    <TableCell className="font-medium">{lead.nome || "Não informado"}</TableCell>
+                  <TableRow key={lead.id} className="border-slate-800 hover:bg-white/5 transition-colors">
+                    <TableCell className="font-medium text-slate-200">{lead.nome || "Não informado"}</TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="text-sm">{lead.email}</span>
-                        <span className="text-xs text-muted-foreground">{lead.telefone?.replace('p:+', '')}</span>
+                        <span className="text-sm text-slate-300">{lead.email}</span>
+                        <span className="text-xs text-slate-500">{lead.telefone}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">{lead.campanha_nome}</TableCell>
+                    <TableCell className="text-sm text-slate-400">{lead.campanha_nome}</TableCell>
                     <TableCell><StatusBadge status={lead.situacao_atendimento} /></TableCell>
-                    <TableCell className="text-sm">
-                      {lead.cadastro
-                        ? format(new Date(lead.cadastro), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
-                        : "-"}
+                    <TableCell className="text-sm text-slate-300">
+                      {lead.cadastro ? format(new Date(lead.cadastro), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm text-right">
                       {lead.updated_at ? (
-                        <span className={isToday(new Date(lead.updated_at)) ? "text-emerald-400 font-medium" : "text-muted-foreground"}>
+                        <span className={isToday(new Date(lead.updated_at)) ? "text-emerald-400" : "text-slate-500"}>
                           {formatRelativeDate(lead.updated_at)}
                         </span>
                       ) : "-"}
@@ -268,9 +248,7 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                    Nenhum lead encontrado.
-                  </TableCell>
+                  <TableCell colSpan={6} className="text-center py-10 text-slate-500">Nenhum lead encontrado.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -279,59 +257,47 @@ const LeadsTable = ({ userId, refreshTrigger, campaigns }: LeadsTableProps) => {
       )}
 
       {/* Pagination Footer */}
-      <div className="flex flex-col sm:flex-row items-center justify-between px-2 py-4 border-t border-border gap-4 mt-4">
-        <div className="flex items-center gap-4">
-          {!loading && (
-            <p className="text-sm text-muted-foreground whitespace-nowrap">
-              Mostrando {currentLeads.length} de {filteredLeads.length} leads
-            </p>
-          )}
-          
-          {!isMobile && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">Linhas:</span>
-              <Select 
-                value={rowsPerPage.toString()} 
-                onValueChange={(val) => setRowsPerPage(Number(val))}
-              >
-                <SelectTrigger className="h-8 w-[70px] bg-surface-2 text-xs">
-                  <SelectValue placeholder={rowsPerPage} />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1e293b] border-slate-700">
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="15">15</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 md:h-8 md:w-8 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1 || loading}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          
-          <div className="flex items-center px-4 text-sm font-medium">
-            Página {currentPage} de {totalPages || 1}
+      <div className="flex flex-col sm:flex-row items-center justify-between px-2 py-4 border-t border-slate-800 gap-4 mt-4">
+        <p className="text-sm text-slate-500">
+          Mostrando {currentLeads.length} de {filteredLeads.length} leads
+        </p>
+        
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Linhas:</span>
+            <Select value={rowsPerPage.toString()} onValueChange={(val) => setRowsPerPage(Number(val))}>
+              <SelectTrigger className="h-8 w-[70px] bg-[#0f172a] border-slate-700 text-xs text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1e293b] border-slate-700 text-white">
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 md:h-8 md:w-8 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages || loading || totalPages === 0}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 border-slate-700 text-white"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1 || loading}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-slate-300">Pág {currentPage} / {totalPages || 1}</span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 border-slate-700 text-white"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || loading || totalPages === 0}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

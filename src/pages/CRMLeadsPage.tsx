@@ -1,82 +1,81 @@
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { Loader2, UploadCloud } from "lucide-react";
-
 import Sidebar from "@/components/dashboard/Sidebar";
-import BottomNav from "@/components/dashboard/BottomNav";
 import CRMUpload from "@/components/crm/CRMUpload";
 import LeadsTable from "@/components/crm/LeadsTable";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { supabase } from "@/integrations/supabase/client";
+import { Filter, ArrowUpDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const CRMLeadsPage = () => {
-  const navigate = useNavigate();
-  const isMobile = useIsMobile();
-  const [user, setUser] = useState<any>(null);
-  const [crmRefresh, setCrmRefresh] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const location = useLocation();
-
-  // currentPage is now derived internally by Sidebar and BottomNav
-  // The CRMLeadsPage itself doesn't need a currentPage state for its own rendering logic
-  // as it always renders CRMUpload and LeadsTable.
+  const [userId, setUserId] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [filterCampaign, setFilterCampaign] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [campaigns, setCampaigns] = useState<any[]>([]);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-      } else {
-        setUser(session.user);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id);
+        // Busca campanhas para o seletor da tabela
+        supabase.from("campaign_metrics")
+          .select("campaign_name")
+          .eq("user_id", user.id)
+          .then(({ data }) => {
+            if (data) {
+              const unique = Array.from(new Set(data.map(d => d.campaign_name))).map(name => ({ campaignName: name }));
+              setCampaigns(unique);
+            }
+          });
       }
-      setLoading(false);
-    };
-    checkAuth();
-  }, [navigate]);
+    });
+  }, []);
 
-  if (loading || !user) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#0f172a]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#f90f54]" />
-      </div>
-    );
-  }
+  if (!userId) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0f172a] text-slate-200">
-      {!isMobile && (
-        <Sidebar />
-      )}
+    <div className="flex h-screen bg-[#0f172a] text-slate-200">
+      <Sidebar />
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
+        <div>
+          <h1 className="text-2xl font-bold text-white uppercase tracking-tight">Gestão de Leads (CRM)</h1>
+          <p className="text-slate-400 text-sm">Auditoria e sincronização de dados de vendas.</p>
+        </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="h-20 flex-shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-slate-800/50 bg-[#0f172a]/80 backdrop-blur-xl z-20">
-          <div className="flex items-center gap-3">
-            <UploadCloud className="w-6 h-6 text-[#f90f54]" />
-            <h1 className="text-xl font-bold tracking-tight text-white">Gestão de Leads e CRM</h1>
+        {/* Componente de Importação */}
+        <CRMUpload 
+          userId={userId} 
+          onUploadComplete={() => setRefreshTrigger(prev => prev + 1)} 
+        />
+
+        {/* Filtro de Auditoria */}
+        <div className="flex flex-wrap items-center gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+            <Filter className="w-4 h-4" /> AUDITORIA DE DATA:
           </div>
-        </header>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+            className="gap-2 border-slate-700 text-white text-[10px] uppercase tracking-widest hover:bg-[#f90f54]"
+          >
+            <ArrowUpDown className="w-3 h-3" />
+            {sortOrder === "desc" ? "Mais Recentes (Upload Novo)" : "Mais Antigos (Verificar Gap)"}
+          </Button>
+        </div>
 
-        <main className={`flex-1 overflow-y-auto bg-[#0f172a] p-4 md:p-8`}>
-          <div className="max-w-[1600px] mx-auto space-y-6 md:space-y-8">
-            <CRMUpload 
-              userId={user.id} 
-              onUploadComplete={() => setCrmRefresh(p => p + 1)} 
-              campaigns={[]}
-            />
-            <LeadsTable 
-              userId={user.id} 
-              refreshTrigger={crmRefresh} 
-              campaigns={[]}
-            />
-          </div>
-        </main>
-      </div>
-
-      {isMobile && (
-        <BottomNav onNavigate={() => {}} />
-      )}
+        {/* Tabela */}
+        <LeadsTable 
+          userId={userId}
+          refreshTrigger={refreshTrigger}
+          filterCampaign={filterCampaign}
+          setFilterCampaign={setFilterCampaign}
+          sortOrder={sortOrder}
+          campaigns={campaigns}
+        />
+      </main>
     </div>
   );
 };
 
-export default CRMLeadsPage;
+export default CRMLeadsPage; // IMPORTANTE: Exportação default para evitar erro no Vite
