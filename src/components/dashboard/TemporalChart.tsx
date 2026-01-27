@@ -7,7 +7,8 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  Legend
+  Legend,
+  LabelList // Import LabelList for data labels
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,8 +90,8 @@ export const TemporalChart = ({ data, isLoading }: TemporalChartProps) => {
                   <stop offset="5%" stopColor="#f90f54" stopOpacity={0.3}/>
                   <stop offset="95%" stopColor="#f90f54" stopOpacity={0}/>
                 </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+              </defs> 
+              <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" strokeWidth={0.5} vertical={true} horizontal={true} />
               
               <XAxis 
                 dataKey="date" 

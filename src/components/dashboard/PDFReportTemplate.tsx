@@ -1,3 +1,4 @@
+import React from "react";
 import { 
   DollarSign, MousePointer, Hash, Percent, Users, Target, Eye, 
   MousePointerClick, Globe, Activity, Bot, Calendar
